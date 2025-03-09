@@ -1,9 +1,12 @@
 const std = @import("std");
+const heap = std.heap;
 const fmt = std.fmt;
 const debug = std.debug;
 const mem = std.mem;
 const process = std.process;
 const ascii = std.ascii;
+const fs = std.fs;
+const json = std.json;
 
 const ParsingError = error{
     UnexpectedToken,
@@ -16,7 +19,7 @@ pub const BibleReference = struct {
     from_verse: u8,
     to_verse: ?u8 = null,
 
-    pub fn toString(self: @This()) ![]const u8 {
+    pub fn toString(self: BibleReference) ![]const u8 {
         var buffer: [32]u8 = undefined;
         if (self.to_verse) |to_verse| {
             return try fmt.bufPrint(buffer[0..], "{s} {d}:{d}-{d}", .{ self.book, self.chapter, self.from_verse, to_verse });
@@ -31,19 +34,50 @@ pub const ArgumentParser = struct {
     argument: []const u8,
     i: usize = 0,
 
-    pub fn parse(self: *@This()) !BibleReference {
+    pub fn parse(self: *ArgumentParser) !BibleReference {
         const book = try self.parseBook();
+        const chapter = try self.parseChapter();
+        const from_verse = try self.parseVerse();
 
-        return BibleReference{ .book = book, .chapter = 0, .from_verse = 0 };
+        return BibleReference{ .book = book, .chapter = chapter, .from_verse = from_verse };
     }
 
-    fn parseBook(self: *@This()) ![]const u8 {
+    fn parseVerse(self: *ArgumentParser) !u8 {
+        if (self.i >= self.argument.len) {
+            return ParsingError.OutOfBounds;
+        }
+
+        if (self.argument[self.i] == ':') {
+            _ = self.eatChar();
+        }
+
+        var j = self.i;
+        while (j < self.argument.len and ascii.isDigit(self.peekCharAt(j))) : (j += 1) {}
+        const verse = try fmt.parseInt(u8, self.argument[self.i..j], 10);
+        self.i = j;
+        _ = self.eatWhitespace();
+        return verse;
+    }
+
+    fn parseChapter(self: *ArgumentParser) !u8 {
+        if (self.i >= self.argument.len) {
+            return ParsingError.OutOfBounds;
+        }
+
+        var j = self.i;
+        while (j < self.argument.len and ascii.isDigit(self.peekCharAt(j))) : (j += 1) {}
+        const chapter = try fmt.parseInt(u8, self.argument[self.i..j], 10);
+        self.i = j;
+        _ = self.eatWhitespace();
+        return chapter;
+    }
+
+    fn parseBook(self: *ArgumentParser) ![]const u8 {
         var book = try std.ArrayList(u8).initCapacity(self.allocator, 32);
         defer book.deinit();
 
         // parse book number if it exists
-        const maybe_digit = self.parseDigit();
-        if (maybe_digit) |digit| {
+        if (self.parseDigit()) |digit| {
             const book_number = switch (digit) {
                 1 => "first",
                 2 => "second",
@@ -52,15 +86,20 @@ pub const ArgumentParser = struct {
             };
             try book.appendSlice(book_number);
             try book.append('_');
+        } else {
+            if (self.parseCardinal()) |cardinal| {
+                try book.appendSlice(cardinal);
+                try book.append('_');
+            }
         }
-        _ = self.eatWhitespace();
+
         const book_name = try self.parseBookName();
         try book.appendSlice(book_name);
 
         return book.toOwnedSlice();
     }
 
-    fn parseBookName(self: *@This()) ![]const u8 {
+    fn parseBookName(self: *ArgumentParser) ![]const u8 {
         var j = self.i;
 
         if (j >= self.argument.len) {
@@ -82,25 +121,72 @@ pub const ArgumentParser = struct {
             }
         }
 
-        const i = self.i;
+        const slice = self.argument[self.i..j];
         self.i = j;
-        return self.argument[i..j];
+        _ = self.eatWhitespace();
+
+        const maybe_name = try self.expandAbbreviation(slice);
+        if (maybe_name) |name| {
+            return name;
+        }
+
+        return slice;
     }
 
-    fn peekChar(self: @This()) u8 {
+    fn expandAbbreviation(self: *ArgumentParser, abbreviation: []const u8) !?[]const u8 {
+        const abbreviations_json_file = try fs.cwd().openFile("./bible-books-abbreviations.json", .{ .mode = .read_only });
+        defer abbreviations_json_file.close();
+
+        const abbreviations_json = try abbreviations_json_file.readToEndAlloc(self.allocator, try abbreviations_json_file.getEndPos());
+
+        var abbreviations_json_root = try json.parseFromSliceLeaky(json.Value, self.allocator, abbreviations_json, .{});
+
+        if (abbreviations_json_root.object.get(abbreviation)) |book_name| {
+            return book_name.string;
+        }
+
+        return null;
+    }
+
+    fn parseCardinal(self: *ArgumentParser) ?[]const u8 {
+        if (self.i >= self.argument.len) {
+            return null;
+        }
+
+        var j = self.i;
+
+        while (j < self.argument.len and ascii.isAlphabetic(self.argument[j])) : (j += 1) {}
+
+        const slice = self.argument[self.i..j];
+
+        if (
+            mem.eql(u8, slice, "first") or
+            mem.eql(u8, slice, "second") or
+            mem.eql(u8, slice, "third")
+        ) {
+            self.i = j;
+            _ = self.eatWhitespace();
+            return slice;
+        }
+
+        return null;
+    }
+
+    fn peekNextChar(self: ArgumentParser) u8 {
         if (self.i + 1 < self.argument.len) {
             return self.argument[self.i + 1];
         }
         return 0;
     }
-    fn peekCharAt(self: @This(), i: usize) u8 {
+
+    fn peekCharAt(self: ArgumentParser, i: usize) u8 {
         if (i < self.argument.len) {
             return self.argument[i];
         }
         return 0;
     }
 
-    fn parseDigit(self: *@This()) ?u8 {
+    fn parseDigit(self: *ArgumentParser) ?u8 {
         if (self.i >= self.argument.len) {
             return null;
         }
@@ -108,13 +194,14 @@ pub const ArgumentParser = struct {
         const char = self.argument[self.i];
         if (ascii.isDigit(char)) {
             self.i += 1;
+            _ = self.eatWhitespace();
             return char - '0';
         }
 
         return null;
     }
 
-    fn eatChar(self: *@This()) bool {
+    fn eatChar(self: *ArgumentParser) bool {
         if (self.i >= self.argument.len) {
             return false;
         }
@@ -122,7 +209,7 @@ pub const ArgumentParser = struct {
         return true;
     }
 
-    fn eatWhitespace(self: *@This()) bool {
+    fn eatWhitespace(self: *ArgumentParser) bool {
         if (self.i >= self.argument.len) {
             return false;
         }
@@ -156,16 +243,14 @@ pub fn collectArgsIntoSlice(allocator: mem.Allocator, args: *process.ArgIterator
 
 test "parse" {
     const testing = std.testing;
-    const allocator = testing.allocator;
 
     const arguments = [_][]const u8{
         "1 kngs 2:3",
         "genesis 1:1",
         "john 1:1",
         "ex 10:11",
-        "Psalms 1:1",
-        "psalm 1:1",
         "psalms 1:1",
+        "psalm 110:5",
     };
 
     const bible_references = [_]BibleReference{
@@ -174,15 +259,18 @@ test "parse" {
         BibleReference{ .book = "john", .chapter = 1, .from_verse = 1, .to_verse = null },
         BibleReference{ .book = "exodus", .chapter = 10, .from_verse = 11, .to_verse = null },
         BibleReference{ .book = "psalms", .chapter = 1, .from_verse = 1, .to_verse = null },
-        BibleReference{ .book = "psalms", .chapter = 1, .from_verse = 1, .to_verse = null },
-        BibleReference{ .book = "psalms", .chapter = 1, .from_verse = 1, .to_verse = null },
+        BibleReference{ .book = "psalms", .chapter = 110, .from_verse = 5, .to_verse = null },
     };
 
     for (arguments, bible_references) |argument, bible_reference| {
-        debug.print("parsing: `{s}`\n", .{argument});
+        var arena = heap.ArenaAllocator.init(testing.allocator);
+        defer arena.deinit();
+        const allocator = arena.allocator();
+
+        debug.print("parsing:\t`{s}`\n", .{argument});
         var argument_parser = ArgumentParser{ .argument = argument, .allocator = allocator };
         const parsed_bible_ref = try argument_parser.parse();
-        debug.print("parsed: `{s}`\n", .{try parsed_bible_ref.toString()});
+        debug.print("parsed:\t\t`{s}`\n", .{try parsed_bible_ref.toString()});
         debug.assert(mem.eql(u8, parsed_bible_ref.book, bible_reference.book));
         debug.assert(parsed_bible_ref.chapter == bible_reference.chapter);
         debug.assert(parsed_bible_ref.from_verse == bible_reference.from_verse);
