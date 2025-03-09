@@ -159,11 +159,10 @@ pub const ArgumentParser = struct {
 
         const slice = self.argument[self.i..j];
 
-        if (
-            mem.eql(u8, slice, "first") or
+        if (mem.eql(u8, slice, "first") or
             mem.eql(u8, slice, "second") or
-            mem.eql(u8, slice, "third")
-        ) {
+            mem.eql(u8, slice, "third"))
+        {
             self.i = j;
             _ = self.eatWhitespace();
             return slice;
