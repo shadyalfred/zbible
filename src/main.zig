@@ -9,7 +9,11 @@ const BibleReference = ap.BibleReference;
 const collectArgsIntoSlice = @import("./argument_parser.zig").collectArgsIntoSlice;
 
 pub fn main() !void {
-    var arena = heap.ArenaAllocator.init(heap.page_allocator);
+    const buffer = try heap.page_allocator.alloc(u8, 128 * 1024 * 1024);
+    defer heap.page_allocator.free(buffer);
+    var backing_allocator = heap.FixedBufferAllocator.init(buffer);
+
+    var arena = heap.ArenaAllocator.init(backing_allocator.allocator());
     defer arena.deinit();
 
     const allocator = arena.allocator();

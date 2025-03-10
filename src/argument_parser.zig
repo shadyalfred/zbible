@@ -232,7 +232,7 @@ pub fn collectArgsIntoSlice(allocator: mem.Allocator, args: *process.ArgIterator
     while (args.next()) |arg| {
         const arg_trimmed = mem.trim(u8, arg, " ");
         for (arg_trimmed) |char| {
-            try list.append(char);
+            try list.append(ascii.toLower(char));
         }
         try list.append(' ');
     }
