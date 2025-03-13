@@ -8,25 +8,11 @@ const ascii = std.ascii;
 const fs = std.fs;
 const json = std.json;
 
+const BibleReference = @import("bible_reference.zig").BibleReference;
+
 const ParsingError = error{
     UnexpectedToken,
     OutOfBounds,
-};
-
-pub const BibleReference = struct {
-    book: []const u8,
-    chapter: u8,
-    from_verse: u8,
-    to_verse: ?u8 = null,
-
-    pub fn toString(self: BibleReference) ![]const u8 {
-        var buffer: [32]u8 = undefined;
-        if (self.to_verse) |to_verse| {
-            return try fmt.bufPrint(buffer[0..], "{s} {d}:{d}-{d}", .{ self.book, self.chapter, self.from_verse, to_verse });
-        } else {
-            return try fmt.bufPrint(buffer[0..], "{s} {d}:{d}", .{ self.book, self.chapter, self.from_verse });
-        }
-    }
 };
 
 pub const ArgumentParser = struct {
@@ -161,7 +147,8 @@ pub const ArgumentParser = struct {
 
         if (mem.eql(u8, slice, "first") or
             mem.eql(u8, slice, "second") or
-            mem.eql(u8, slice, "third"))
+            mem.eql(u8, slice, "third") or
+            mem.eql(u8, slice, "fourth"))
         {
             self.i = j;
             _ = self.eatWhitespace();

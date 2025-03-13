@@ -56,7 +56,7 @@
   "qoheleth": "ecclesiastes",
 
   "song": "song_of_solomon",
-  "song of songs": "song_of_solomon",
+  "song_of_songs": "song_of_solomon",
 
   "is": "isaiah",
   "isa": "isaiah",
@@ -73,6 +73,11 @@
   "da": "daniel",
   "dn": "daniel",
   "dan": "daniel",
+
+  "add_dan": "greek_daniel",
+  "additions_dan": "greek_daniel",
+  "grk_dan": "greek_daniel",
+  "greek_dan": "greek_daniel",
 
   "ho": "hosea",
   "hos": "hosea",
@@ -112,7 +117,10 @@
   "jth": "judith",
   "jdt": "judith",
 
-  "add_esth": "additions_to_esther",
+  "add_esth": "greek_esther",
+  "additions_esth": "greek_esther",
+  "grk_esth": "greek_esther",
+  "greek_esth": "greek_esther",
 
   "wi": "wisdom",
   "wis": "wisdom",
