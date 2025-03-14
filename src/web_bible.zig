@@ -7,108 +7,152 @@ const ascii = std.ascii;
 
 const BibleReference = @import("bible_reference.zig").BibleReference;
 
-const Error = error{BibleBookNotFound};
+const Error = error{
+    BibleBookNotFound,
+    ChapterNotFound,
+};
 
-pub fn getBibleVerses(allocator: mem.Allocator, bible_reference: BibleReference) ![]const u8 {
-    const maybe_bible_file_name = getBibleBookFileName(bible_reference.book);
+pub const WEBParser = struct {
+    allocator: mem.Allocator,
 
-    if (maybe_bible_file_name == null) {
-        return Error.BibleBookNotFound;
+    pub fn init(allocator: mem.Allocator) WEBParser {
+        return WEBParser {
+            .allocator = allocator,
+        };
     }
 
-    var verses = try std.ArrayList(u8).initCapacity(allocator, 1024);
-    defer verses.deinit();
+    pub fn getBibleVerses(self: WEBParser, bible_reference: BibleReference) ![] const u8 {
+        const maybe_bible_file_name = getBibleBookFileName(bible_reference.book);
 
-    const bible_file_name = maybe_bible_file_name.?;
-    var buffer: [64]u8 = undefined;
-    const web_usfm_file = try std.fs.cwd().openFile(try fmt.bufPrint(buffer[0..], "./eng-web-usfm/{s}", .{bible_file_name}), .{ .mode = .read_only });
-    defer web_usfm_file.close();
+        if (maybe_bible_file_name == null) {
+            return Error.BibleBookNotFound;
+        }
 
-    var buffered_reader = io.bufferedReader(web_usfm_file.reader());
-    var file_reader = buffered_reader.reader();
+        var verses = try std.ArrayList(u8).initCapacity(self.allocator, 4 * 1024);
+        defer verses.deinit();
 
-    while (try file_reader.readUntilDelimiterOrEofAlloc(allocator, '\n', 1024 * 1024)) |line| {
-        defer allocator.free(line);
-        if (mem.startsWith(u8, line, "\\c ")) {
-            var it = mem.tokenizeScalar(u8, line, ' ');
-            // skip `\c`
-            _ = it.next();
-            const chapter = try fmt.parseInt(u8, it.next().?, 10);
-            if (chapter == bible_reference.chapter) {
-                break;
+        const bible_file_name = maybe_bible_file_name.?;
+        var buffer: [64]u8 = undefined;
+        const web_usfm_file = try std.fs.cwd().openFile(try fmt.bufPrint(buffer[0..], "./eng-web-usfm/{s}", .{bible_file_name}), .{ .mode = .read_only });
+        defer web_usfm_file.close();
+
+        var buffered_reader = io.bufferedReader(web_usfm_file.reader());
+        var file_reader = buffered_reader.reader();
+
+        var found_chapter = false;
+
+        while (try file_reader.readUntilDelimiterOrEofAlloc(self.allocator, '\n', 1024 * 1024)) |line| {
+            defer self.allocator.free(line);
+            const maybe_chapter = parseChapter(line);
+            if (maybe_chapter) |chapter| {
+                if (chapter == bible_reference.chapter) {
+                    found_chapter = true;
+                    break;
+                }
             }
         }
-    }
 
-    while (try file_reader.readUntilDelimiterOrEofAlloc(allocator, '\n', 1024 * 1024)) |line| {
-        defer allocator.free(line);
-        if (mem.startsWith(u8, line, "\\v")) {
-            var it = mem.tokenizeScalar(u8, line, ' ');
-            // skip `\v`
-            _ = it.next();
-            const verse = try fmt.parseInt(u8, it.next().?, 10);
-            if (verse == bible_reference.from_verse) {
-                var i: usize = 0;
-                while (i < line.len) {
-                    const current_char = line[i];
-                    switch (current_char) {
-                        '\\' => {
-                            switch (line[i + 1]) {
-                                'v' => {
-                                    i += 3;
-                                    while (ascii.isDigit(line[i])) { i += 1; }
-                                    i += 1;
-                                },
-                                'w' => {
-                                    if (line[i + 2] == ' ') {
-                                        i += 3;
-                                    } else {
-                                        i += 3;
-                                    }
-                                },
-                                else => std.debug.panic("unrecognized tag: {s}\n", .{line[i..i+1]})
-                            }
-                        },
-                        '|' => {
-                            i += 15;
-                            continue;
-                        },
-                        else => { 
-                            try verses.append(current_char);
-                            i += 1;
-                        }
+        if (!found_chapter) {
+            return Error.ChapterNotFound;
+        }
+
+        while (try file_reader.readUntilDelimiterOrEofAlloc(self.allocator, '\n', 1024 * 1024)) |line| {
+            defer self.allocator.free(line);
+            const maybe_verse_number = parseVerseNumber(line);
+            if (maybe_verse_number) |verse_number| {
+                if (bible_reference.to_verse) |to_verse| {
+                    if (verse_number > to_verse) {
+                        break;
+                    }
+                } else {
+                    if (verse_number != bible_reference.from_verse) {
+                        break;
                     }
                 }
-                break;
             }
-            // if (verse == bible_reference.from_verse) {
-            //     var verse_it = mem.tokenizeScalar(u8, line, ' ');
-            //     // skip `\v #`
-            //     _ = verse_it.next();
-            //     _ = verse_it.next();
-            //     while (verse_it.next()) |token| {
-            //         if (mem.eql(u8, token, "\\w")) {
-            //             const word = verse_it.next().?;
-            //             try verses.appendSlice(word[0..mem.indexOf(u8, word[0..], "|").?]);
-            //             const last_char = word[word.len - 1];
-            //             switch (last_char) {
-            //                 ',', ';', '.', '?', '!' => try verses.append(last_char),
-            //                 else => {}
-            //             }
-            //         } else {
-            //             try verses.appendSlice(token);
-            //         }
-            //
-            //         try verses.append(' ');
-            //     }
-            //     _ = verses.pop();
-            // break;
-            // }
+            const verse = try self.parseVerse(line);
+            try verses.appendSlice(verse);
         }
+
+        return verses.toOwnedSlice();
     }
 
-    return verses.toOwnedSlice();
-}
+    fn parseChapter(line: []const u8) ?u8 {
+        if (!mem.startsWith(u8, line, "\\c ")) {
+            return null;
+        }
+
+        var it = mem.tokenizeScalar(u8, line, ' ');
+        // skip `\c`
+        _ = it.next();
+        const chapter = fmt.parseInt(u8, it.next().?, 10) catch unreachable;
+        return chapter;
+    }
+
+    fn parseVerseNumber(line: []const u8) ?u8 {
+        if (!mem.startsWith(u8, line, "\\v")) {
+            return null;
+        }
+        var it = mem.tokenizeScalar(u8, line, ' ');
+        // skip `\v`
+        _ = it.next();
+        return fmt.parseInt(u8, it.next().?, 10) catch unreachable;
+    }
+
+    fn parseVerse(self: WEBParser, line: []const u8) ![]const u8 {
+        var i: usize = 0;
+        var verse = try std.ArrayList(u8).initCapacity(self.allocator, 4 * 1024);
+        defer verse.deinit();
+        while (i < line.len) {
+            if (line[i] == '\\') {
+                switch (line[i + 1]) {
+                    'w' => {
+                        // skip `\w `
+                        i += 3;
+
+                        if (line[i - 1] == '*') {
+                            // skip `\w*`
+                            continue;
+                        }
+
+                        const word_end_i = mem.indexOfScalarPos(u8, line, i, ' ').?;
+                        const maybe_strong = mem.indexOfScalarPos(u8, line, i, '|');
+                        if (maybe_strong) |strong_idx| {
+                            try verse.appendSlice(line[i..strong_idx]);
+                            i = strong_idx + 15;
+                        } else {
+                            try verse.appendSlice(line[i..word_end_i]);
+                            i = word_end_i + 1;
+                        }
+                    },
+                    'q' => {
+                        var indentation_level = line[i + 2] - '0';
+                        if (indentation_level > 1) {
+                            try verse.append('\n');
+                            while (indentation_level > 1) : (indentation_level -= 1) {
+                                try verse.append('\t');
+                            }
+                        }
+                        i += 3;
+                    },
+                    'v' => {
+                        i += mem.indexOfScalarPos(u8, line, i + 3, ' ').? + 1;
+                    },
+                    else => {
+                        i += 3;
+                        continue;
+                    }
+                }
+            } else if (line[i] == ' ' and line[i - 1] == ' ') {
+                i += 1;
+            } else {
+                try verse.append(line[i]);
+                i += 1;
+            }
+        }
+        return try verse.toOwnedSlice();
+    }
+};
 
 fn getBibleBookFileName(bible_book_name: []const u8) ?[]const u8 {
     if (mem.eql(u8, bible_book_name, "genesis")) {
@@ -275,9 +319,4 @@ fn getBibleBookFileName(bible_book_name: []const u8) ?[]const u8 {
     } else {
         return null;
     }
-}
-
-test "hmmm" {
-    const debug = std.debug;
-    debug.assert(false);
 }

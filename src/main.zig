@@ -6,7 +6,7 @@ const json = std.json;
 const ArgumentParser = @import("./argument_parser.zig").ArgumentParser;
 const BibleReference = @import("./bible_reference.zig").BibleReference;
 const collectArgsIntoSlice = @import("./argument_parser.zig").collectArgsIntoSlice;
-const getBibleVerses = @import("web_bible.zig").getBibleVerses;
+const WEBParser = @import("web_bible.zig").WEBParser;
 
 pub fn main() !void {
     const buffer = try heap.page_allocator.alloc(u8, 1024 * 1024);
@@ -24,11 +24,8 @@ pub fn main() !void {
     var argument_parser = ArgumentParser{ .allocator = allocator, .argument = argument };
     const bible_reference = try argument_parser.parse();
 
-    const verses = try getBibleVerses(allocator, bible_reference);
-    std.debug.print("{s}\n", .{verses});
-}
+    const web_bible = WEBParser.init(allocator);
 
-test "mmmm" {
-    const debug = std.debug;
-    debug.assert(false);
+    const verses = try web_bible.getBibleVerses(bible_reference);
+    std.debug.print("{s}\n", .{verses});
 }
