@@ -3,6 +3,7 @@ const fmt = std.fmt;
 const io = std.io;
 const hash = std.hash;
 const mem = std.mem;
+const ascii = std.ascii;
 
 const BibleReference = @import("bible_reference.zig").BibleReference;
 
@@ -28,7 +29,7 @@ pub fn getBibleVerses(allocator: mem.Allocator, bible_reference: BibleReference)
 
     while (try file_reader.readUntilDelimiterOrEofAlloc(allocator, '\n', 1024 * 1024)) |line| {
         defer allocator.free(line);
-        if (mem.startsWith(u8, line, "\\c")) {
+        if (mem.startsWith(u8, line, "\\c ")) {
             var it = mem.tokenizeScalar(u8, line, ' ');
             // skip `\c`
             _ = it.next();
@@ -47,25 +48,62 @@ pub fn getBibleVerses(allocator: mem.Allocator, bible_reference: BibleReference)
             _ = it.next();
             const verse = try fmt.parseInt(u8, it.next().?, 10);
             if (verse == bible_reference.from_verse) {
-                var i = mem.indexOf(u8, line, "w").?;
-                // skip whitespace
-                i += 2;
-                while (i < line.len) : (i += 1) {
-                    // skip `|strong="H####"\w*`
-                    if (line[i] == '|') {
-                        i += 17;
-                        continue;
+                var i: usize = 0;
+                while (i < line.len) {
+                    const current_char = line[i];
+                    switch (current_char) {
+                        '\\' => {
+                            switch (line[i + 1]) {
+                                'v' => {
+                                    i += 3;
+                                    while (ascii.isDigit(line[i])) { i += 1; }
+                                    i += 1;
+                                },
+                                'w' => {
+                                    if (line[i + 2] == ' ') {
+                                        i += 3;
+                                    } else {
+                                        i += 3;
+                                    }
+                                },
+                                else => std.debug.panic("unrecognized tag: {s}\n", .{line[i..i+1]})
+                            }
+                        },
+                        '|' => {
+                            i += 15;
+                            continue;
+                        },
+                        else => { 
+                            try verses.append(current_char);
+                            i += 1;
+                        }
                     }
-
-                    // skip `\w `
-                    if (line[i] == '\\' and line[i+1] == 'w') {
-                        i += 3;
-                    }
-
-                    try verses.append(line[i]);
                 }
                 break;
             }
+            // if (verse == bible_reference.from_verse) {
+            //     var verse_it = mem.tokenizeScalar(u8, line, ' ');
+            //     // skip `\v #`
+            //     _ = verse_it.next();
+            //     _ = verse_it.next();
+            //     while (verse_it.next()) |token| {
+            //         if (mem.eql(u8, token, "\\w")) {
+            //             const word = verse_it.next().?;
+            //             try verses.appendSlice(word[0..mem.indexOf(u8, word[0..], "|").?]);
+            //             const last_char = word[word.len - 1];
+            //             switch (last_char) {
+            //                 ',', ';', '.', '?', '!' => try verses.append(last_char),
+            //                 else => {}
+            //             }
+            //         } else {
+            //             try verses.appendSlice(token);
+            //         }
+            //
+            //         try verses.append(' ');
+            //     }
+            //     _ = verses.pop();
+            // break;
+            // }
         }
     }
 
@@ -237,4 +275,9 @@ fn getBibleBookFileName(bible_book_name: []const u8) ?[]const u8 {
     } else {
         return null;
     }
+}
+
+test "hmmm" {
+    const debug = std.debug;
+    debug.assert(false);
 }

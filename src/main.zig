@@ -27,3 +27,8 @@ pub fn main() !void {
     const verses = try getBibleVerses(allocator, bible_reference);
     std.debug.print("{s}\n", .{verses});
 }
+
+test "mmmm" {
+    const debug = std.debug;
+    debug.assert(false);
+}
