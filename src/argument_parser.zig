@@ -25,6 +25,15 @@ pub const ArgumentParser = struct {
         const chapter = try self.parseChapter();
         const from_verse = try self.parseVerse();
 
+        if (self.i != self.argument.len) {
+            if (self.argument[self.i] == '-') {
+                // skip `-`
+                _ = self.eatChar();
+            }
+            const to_verse = try self.parseVerse();
+            return BibleReference{ .book = book, .chapter = chapter, .from_verse = from_verse, .to_verse = to_verse };
+        }
+
         return BibleReference{ .book = book, .chapter = chapter, .from_verse = from_verse };
     }
 

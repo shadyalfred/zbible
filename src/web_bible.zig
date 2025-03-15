@@ -10,6 +10,7 @@ const BibleReference = @import("bible_reference.zig").BibleReference;
 const Error = error{
     BibleBookNotFound,
     ChapterNotFound,
+    VerseNotFound,
 };
 
 pub const WEBParser = struct {
@@ -30,6 +31,9 @@ pub const WEBParser = struct {
 
         var verses = try std.ArrayList(u8).initCapacity(self.allocator, 4 * 1024);
         defer verses.deinit();
+
+        var footnotes = try std.ArrayList(u8).initCapacity(self.allocator, 2 * 1024);
+        defer footnotes.deinit();
 
         const bible_file_name = maybe_bible_file_name.?;
         var buffer: [64]u8 = undefined;
@@ -56,13 +60,49 @@ pub const WEBParser = struct {
             return Error.ChapterNotFound;
         }
 
+        var found_verse = false;
+
         while (try file_reader.readUntilDelimiterOrEofAlloc(self.allocator, '\n', 1024 * 1024)) |line| {
             defer self.allocator.free(line);
+            const maybe_chapter = parseChapter(line);
+            if (maybe_chapter) |chapter| {
+                if (chapter != bible_reference.chapter) {
+                    break;
+                }
+            }
+            const maybe_verse_number = parseVerseNumber(line);
+            if (maybe_verse_number) |verse_number| {
+                if (verse_number == bible_reference.from_verse) {
+                    const verse_number_ss = try self.toSuperscript(verse_number);
+                    try verses.appendSlice(verse_number_ss);
+                    const verse = try self.parseVerse(line, &footnotes);
+                    try verses.appendSlice(verse);
+                    found_verse = true;
+                    break;
+                }
+            }
+        }
+
+        if (!found_verse) {
+            return Error.VerseNotFound;
+        }
+
+        while (try file_reader.readUntilDelimiterOrEofAlloc(self.allocator, '\n', 1024 * 1024)) |line| {
+            defer self.allocator.free(line);
+            const maybe_chapter = parseChapter(line);
+            if (maybe_chapter) |chapter| {
+                if (chapter != bible_reference.chapter) {
+                    break;
+                }
+            }
             const maybe_verse_number = parseVerseNumber(line);
             if (maybe_verse_number) |verse_number| {
                 if (bible_reference.to_verse) |to_verse| {
                     if (verse_number > to_verse) {
                         break;
+                    } else {
+                        const verse_number_ss = try self.toSuperscript(verse_number);
+                        try verses.appendSlice(verse_number_ss);
                     }
                 } else {
                     if (verse_number != bible_reference.from_verse) {
@@ -70,11 +110,44 @@ pub const WEBParser = struct {
                     }
                 }
             }
-            const verse = try self.parseVerse(line);
+            const verse = try self.parseVerse(line, &footnotes);
             try verses.appendSlice(verse);
         }
 
+        if (footnotes.items.len != 0) {
+            try verses.append('\n');
+            try verses.appendSlice(try footnotes.toOwnedSlice());
+        }
+
+
         return verses.toOwnedSlice();
+    }
+
+    fn toSuperscript(self: WEBParser, number: u8) ![]const u8 {
+        var buffer: [16]u8 = undefined;
+        const num = try fmt.bufPrint(&buffer, "{d}", .{number});
+
+        var ss_number = try std.ArrayList(u8).initCapacity(self.allocator, 16);
+        defer ss_number.deinit();
+
+        for (num) |digit| {
+            const ss = switch (digit) {
+                '0' => "⁰",
+                '1' => "¹",
+                '2' => "²",
+                '3' => "³",
+                '4' => "⁴",
+                '5' => "⁵",
+                '6' => "⁶",
+                '7' => "⁷",
+                '8' => "⁸",
+                '9' => "⁹",
+                else => @panic("not a digit"),
+            };
+            try ss_number.appendSlice(ss);
+        }
+
+        return ss_number.toOwnedSlice();
     }
 
     fn parseChapter(line: []const u8) ?u8 {
@@ -99,10 +172,11 @@ pub const WEBParser = struct {
         return fmt.parseInt(u8, it.next().?, 10) catch unreachable;
     }
 
-    fn parseVerse(self: WEBParser, line: []const u8) ![]const u8 {
+    fn parseVerse(self: WEBParser, line: []const u8, footnotes: *std.ArrayList(u8)) ![]const u8 {
         var i: usize = 0;
         var verse = try std.ArrayList(u8).initCapacity(self.allocator, 4 * 1024);
         defer verse.deinit();
+        var previous_indentation_level: u8 = 1;
         while (i < line.len) {
             if (line[i] == '\\') {
                 switch (line[i + 1]) {
@@ -127,24 +201,51 @@ pub const WEBParser = struct {
                     },
                     'q' => {
                         var indentation_level = line[i + 2] - '0';
-                        if (indentation_level > 1) {
+                        if (line.len == 3 or indentation_level != previous_indentation_level) {
                             try verse.append('\n');
+                        }
+                        if (indentation_level > 1) {
                             while (indentation_level > 1) : (indentation_level -= 1) {
                                 try verse.append('\t');
                             }
                         }
-                        i += 3;
+                        previous_indentation_level = indentation_level;
+                        i += 4;
                     },
                     'v' => {
                         i += mem.indexOfScalarPos(u8, line, i + 3, ' ').? + 1;
+                    },
+                    'f' => {
+                        const fr_begin = mem.indexOfScalarPos(u8, line, i, ':').? + 1;
+                        const fr_end = mem.indexOfScalarPos(u8, line, fr_begin, ' ').?;
+                        const verse_number = line[fr_begin..fr_end];
+
+                        const ft_begin = mem.indexOfScalarPos(u8, line, fr_end + 1, ' ').? + 1;
+                        const ft_end = mem.indexOfPosLinear(u8, line, ft_begin, "\\f*").?;
+                        const ft_raw = line[ft_begin..ft_end];
+                        const temp = try mem.replaceOwned(u8, self.allocator, ft_raw, "\\+wh ", "");
+                        const ft = try mem.replaceOwned(u8, self.allocator, temp, "\\+wh*", "");
+                        defer self.allocator.free(ft);
+                        self.allocator.free(temp);
+
+                        try footnotes.append('\n');
+                        try footnotes.appendSlice(verse_number);
+                        try footnotes.appendSlice(": ");
+                        try footnotes.appendSlice(ft);
+
+                        i = ft_end + 3;
                     },
                     else => {
                         i += 3;
                         continue;
                     }
                 }
-            } else if (line[i] == ' ' and line[i - 1] == ' ') {
+            } else if (line[i] == ' ' and line[i + 1] == ' ') {
                 i += 1;
+                if (i == line.len - 1) {
+                    i += 1;
+                    continue;
+                }
             } else {
                 try verse.append(line[i]);
                 i += 1;
