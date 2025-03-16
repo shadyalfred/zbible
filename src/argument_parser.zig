@@ -6,10 +6,12 @@ const process = std.process;
 const ascii = std.ascii;
 
 const BibleReference = @import("bible_reference.zig").BibleReference;
+const BibleBook = @import("bible_reference.zig").BibleBook;
 
 const ParsingError = error{
     UnexpectedToken,
     OutOfBounds,
+    BibleBookNotFound,
 };
 
 pub const ArgumentParser = struct {
@@ -64,7 +66,7 @@ pub const ArgumentParser = struct {
         return chapter;
     }
 
-    fn parseBook(self: *ArgumentParser) ![]const u8 {
+    fn parseBook(self: *ArgumentParser) !BibleBook {
         var book = try std.ArrayList(u8).initCapacity(self.allocator, 32);
         defer book.deinit();
 
@@ -88,7 +90,12 @@ pub const ArgumentParser = struct {
         const book_name = try self.parseBookName();
         try book.appendSlice(book_name);
 
-        return book.toOwnedSlice();
+        const maybe_bible_book = getBibleBookEnum(book.items);
+        if (maybe_bible_book == null) {
+            return ParsingError.BibleBookNotFound;
+        }
+
+        return maybe_bible_book.?;
     }
 
     fn parseBookName(self: *ArgumentParser) ![]const u8 {
@@ -434,6 +441,95 @@ fn expandAbbreviation(abbreviation: []const u8) ?[]const u8 {
     });
 
     return abbreviations.get(abbreviation);
+}
+
+fn getBibleBookEnum(bible_book_name: []const u8) ?BibleBook {
+    const bible_book_name_enum_map = std.StaticStringMap(BibleBook).initComptime(.{
+        .{ "genesis", .Genesis },
+        .{ "exodus", .Exodus },
+        .{ "leviticus", .Leviticus },
+        .{ "numbers", .Numbers },
+        .{ "deuteronomy", .Deuteronomy },
+        .{ "joshua", .Joshua },
+        .{ "judges", .Judges },
+        .{ "ruth", .Ruth },
+        .{ "first_samuel", .FirstSamuel },
+        .{ "second_samuel", .SecondSamuel },
+        .{ "first_kings", .FirstKings },
+        .{ "second_kings", .SecondKings },
+        .{ "first_chronicles", .FirstChronicles },
+        .{ "second_chronicles", .SecondChronicles },
+        .{ "ezra", .Ezra },
+        .{ "nehemiah", .Nehemiah },
+        .{ "esther", .Esther },
+        .{ "job", .Job },
+        .{ "psalms", .Psalms },
+        .{ "proverbs", .Proverbs },
+        .{ "ecclesiastes", .Ecclesiastes },
+        .{ "song_of_solomon", .SongOfSolomon },
+        .{ "isaiah", .Isaiah },
+        .{ "jeremiah", .Jeremiah },
+        .{ "lamentations", .Lamentations },
+        .{ "ezekiel", .Ezekiel },
+        .{ "daniel", .Daniel },
+        .{ "hosea", .Hosea },
+        .{ "joel", .Joel },
+        .{ "amos", .Amos },
+        .{ "obadiah", .Obadiah },
+        .{ "jonah", .Jonah },
+        .{ "micah", .Micah },
+        .{ "nahum", .Nahum },
+        .{ "habakkuk", .Habakkuk },
+        .{ "zephaniah", .Zephaniah },
+        .{ "haggai", .Haggai },
+        .{ "zechariah", .Zechariah },
+        .{ "malachi", .Malachi },
+
+        .{ "tobit", .Tobit },
+        .{ "judith", .Judith },
+        .{ "greek_esther", .GreekEsther },
+        .{ "wisdom", .Wisdom },
+        .{ "sirach", .Sirach },
+        .{ "baruch", .Baruch },
+        .{ "first_maccabees", .FirstMaccabees },
+        .{ "second_maccabees", .SecondMaccabees },
+        .{ "first_esdras", .FirstEsdras },
+        .{ "prayer_of_manasseh", .PrayerOfManasseh },
+        .{ "third_maccabees", .ThirdMaccabees },
+        .{ "second_esdras", .SecondEsdras },
+        .{ "fourth_maccabees", .FourthMaccabees },
+        .{ "greek_daniel", .GreekDaniel },
+
+        .{ "matthew", .Matthew },
+        .{ "mark", .Mark },
+        .{ "luke", .Luke },
+        .{ "john", .John },
+        .{ "acts", .Acts },
+        .{ "romans", .Romans },
+        .{ "first_corinthians", .FirstCorinthians },
+        .{ "second_corinthians", .SecondCorinthians },
+        .{ "galatians", .Galatians },
+        .{ "ephesians", .Ephesians },
+        .{ "philippians", .Philippians },
+        .{ "colossians", .Colossians },
+        .{ "first_thessalonians", .FirstThessalonians },
+        .{ "second_thessalonians", .SecondThessalonians },
+        .{ "first_timothy", .FirstTimothy },
+        .{ "second_timothy", .SecondTimothy },
+        .{ "titus", .Titus },
+        .{ "philemon", .Philemon },
+        .{ "hebrews", .Hebrews },
+        .{ "james", .James },
+        .{ "first_peter", .FirstPeter },
+        .{ "second_peter", .SecondPeter },
+        .{ "first_john", .FirstJohn },
+        .{ "second_john", .SecondJohn },
+        .{ "third_john", .ThirdJohn },
+        .{ "jude", .Jude },
+        .{ "revelation_of_john", .Revelation },
+    });
+
+    return bible_book_name_enum_map.get(bible_book_name);
 }
 
 test "parse" {
