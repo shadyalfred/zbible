@@ -1,12 +1,9 @@
 const std = @import("std");
-const heap = std.heap;
 const fmt = std.fmt;
 const debug = std.debug;
 const mem = std.mem;
 const process = std.process;
 const ascii = std.ascii;
-const fs = std.fs;
-const json = std.json;
 
 const BibleReference = @import("bible_reference.zig").BibleReference;
 
@@ -120,27 +117,12 @@ pub const ArgumentParser = struct {
         self.i = j;
         _ = self.eatWhitespace();
 
-        const maybe_name = try self.expandAbbreviation(slice);
+        const maybe_name = expandAbbreviation(slice);
         if (maybe_name) |name| {
             return name;
         }
 
         return slice;
-    }
-
-    fn expandAbbreviation(self: *ArgumentParser, abbreviation: []const u8) !?[]const u8 {
-        const abbreviations_json_file = try fs.cwd().openFile("./bible-books-abbreviations.json", .{ .mode = .read_only });
-        defer abbreviations_json_file.close();
-
-        const abbreviations_json = try abbreviations_json_file.readToEndAlloc(self.allocator, try abbreviations_json_file.getEndPos());
-
-        var abbreviations_json_root = try json.parseFromSliceLeaky(json.Value, self.allocator, abbreviations_json, .{});
-
-        if (abbreviations_json_root.object.get(abbreviation)) |book_name| {
-            return book_name.string;
-        }
-
-        return null;
     }
 
     fn parseCardinal(self: *ArgumentParser) ?[]const u8 {
@@ -236,8 +218,227 @@ pub fn collectArgsIntoSlice(allocator: mem.Allocator, args: *process.ArgIterator
     return list.toOwnedSlice();
 }
 
+fn expandAbbreviation(abbreviation: []const u8) ?[]const u8 {
+    const abbreviations = std.StaticStringMap([]const u8).initComptime(.{
+        .{ "gn", "genesis" },
+        .{ "gen", "genesis" },
+
+        .{ "ex", "exodus" },
+        .{ "exod", "exodus" },
+
+        .{ "lev", "leviticus" },
+
+        .{ "num", "numbers" },
+
+        .{ "dt", "deuteronomy" },
+        .{ "deut", "deuteronomy" },
+
+        .{ "jos", "joshua" },
+        .{ "josh", "joshua" },
+
+        .{ "jdg", "judges" },
+        .{ "jgs", "judges" },
+        .{ "judg", "judges" },
+
+        .{ "ru", "ruth" },
+
+        .{ "sam", "samuel" },
+
+        .{ "kg", "kings" },
+        .{ "kgs", "kings" },
+        .{ "kngs", "kings" },
+
+        .{ "ch", "chronicles" },
+        .{ "chr", "chronicles" },
+
+        .{ "ezr", "ezra" },
+
+        .{ "neh", "nehemiah" },
+
+        .{ "es", "esther" },
+        .{ "est", "esther" },
+        .{ "esth", "esther" },
+
+        .{ "jb", "job" },
+        .{ "job", "job" },
+
+        .{ "ps", "psalms" },
+        .{ "pss", "psalms" },
+        .{ "psalm", "psalms" },
+
+        .{ "pr", "proverbs" },
+        .{ "prv", "proverbs" },
+        .{ "prov", "proverbs" },
+
+        .{ "ec", "ecclesiastes" },
+        .{ "eccl", "ecclesiastes" },
+        .{ "eccles", "ecclesiastes" },
+        .{ "qoh", "ecclesiastes" },
+        .{ "qoheleth", "ecclesiastes" },
+
+        .{ "song", "song_of_solomon" },
+        .{ "song_of_songs", "song_of_solomon" },
+
+        .{ "is", "isaiah" },
+        .{ "isa", "isaiah" },
+
+        .{ "je", "jeremiah" },
+        .{ "jer", "jeremiah" },
+
+        .{ "lam", "lamentations" },
+
+        .{ "ez", "ezekiel" },
+        .{ "ezk", "ezekiel" },
+        .{ "ezek", "ezekiel" },
+
+        .{ "da", "daniel" },
+        .{ "dn", "daniel" },
+        .{ "dan", "daniel" },
+
+        .{ "add_dan", "greek_daniel" },
+        .{ "additions_dan", "greek_daniel" },
+        .{ "grk_dan", "greek_daniel" },
+        .{ "greek_dan", "greek_daniel" },
+        .{ "grk_daniel", "greek_daniel" },
+
+        .{ "ho", "hosea" },
+        .{ "hos", "hosea" },
+
+        .{ "jl", "joel" },
+        .{ "joe", "joel" },
+
+        .{ "am", "amos" },
+
+        .{ "ob", "obadiah" },
+        .{ "obad", "obadiah" },
+
+        .{ "jon", "jonah" },
+
+        .{ "mic", "micah" },
+
+        .{ "nah", "nahum" },
+
+        .{ "hab", "habakkuk" },
+
+        .{ "zep", "zephaniah" },
+        .{ "zeph", "zephaniah" },
+
+        .{ "hag", "haggai" },
+
+        .{ "zec", "zechariah" },
+        .{ "zech", "zechariah" },
+
+        .{ "ml", "malachi" },
+        .{ "mal", "malachi" },
+
+        .{ "esd", "esdras" },
+
+        .{ "tb", "tobit" },
+        .{ "tob", "tobit" },
+
+        .{ "jth", "judith" },
+        .{ "jdt", "judith" },
+
+        .{ "add_esth", "greek_esther" },
+        .{ "additions_esth", "greek_esther" },
+        .{ "grk_esth", "greek_esther" },
+        .{ "greek_esth", "greek_esther" },
+
+        .{ "wi", "wisdom" },
+        .{ "wis", "wisdom" },
+
+        .{ "sir", "sirach" },
+        .{ "ecclus", "sirach" },
+        .{ "ecclesiasticus", "sirach" },
+
+        .{ "ba", "baruch" },
+        .{ "bar", "baruch" },
+
+        .{ "pr_azar", "prayer_of_azariah" },
+
+        .{ "sus", "susanna" },
+
+        .{ "bel", "bel_and_the_dragon" },
+
+        .{ "pr_man", "prayer_of_manasseh" },
+
+        .{ "mc", "maccabees" },
+        .{ "ma", "maccabees" },
+        .{ "macc", "maccabees" },
+
+        .{ "mt", "matthew" },
+        .{ "mat", "matthew" },
+        .{ "matt", "matthew" },
+
+        .{ "mk", "mark" },
+        .{ "mar", "mark" },
+
+        .{ "lu", "luke" },
+        .{ "lk", "luke" },
+
+        .{ "jo", "john" },
+        .{ "jn", "john" },
+
+        .{ "ac", "acts" },
+
+        .{ "ro", "romans" },
+        .{ "rm", "romans" },
+        .{ "rom", "romans" },
+
+        .{ "co", "corinthians" },
+        .{ "cor", "corinthians" },
+
+        .{ "ga", "galatians" },
+        .{ "gal", "galatians" },
+
+        .{ "ep", "ephesians" },
+        .{ "eph", "ephesians" },
+
+        .{ "php", "philippians" },
+        .{ "phil", "philippians" },
+
+        .{ "col", "colossians" },
+
+        .{ "th", "thessalonians" },
+        .{ "thes", "thessalonians" },
+        .{ "thess", "thessalonians" },
+
+        .{ "tm", "timothy" },
+        .{ "ti", "timothy" },
+        .{ "tim", "timothy" },
+
+        .{ "tit", "titus" },
+
+        .{ "phm", "philemon" },
+        .{ "phlm", "philemon" },
+        .{ "philem", "philemon" },
+
+        .{ "he", "hebrews" },
+        .{ "heb", "hebrews" },
+
+        .{ "ja", "james" },
+        .{ "jas", "james" },
+
+        .{ "pt", "peter" },
+        .{ "pet", "peter" },
+
+        .{ "ju", "jude" },
+
+        .{ "ap", "revelation_of_john" },
+        .{ "apoc", "revelation_of_john" },
+        .{ "apocalypse", "revelation_of_john" },
+        .{ "rv", "revelation_of_john" },
+        .{ "rev", "revelation_of_john" },
+        .{ "revelation", "revelation_of_john" },
+        .{ "revelation_to_john", "revelation_of_john" }
+    });
+
+    return abbreviations.get(abbreviation);
+}
+
 test "parse" {
     const testing = std.testing;
+    const heap = std.heap;
 
     const arguments = [_][]const u8{
         "1 kngs 2:3",

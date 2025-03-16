@@ -1,5 +1,6 @@
 const std = @import("std");
 const fmt = std.fmt;
+const mem = std.mem;
 
 pub const BibleReference = struct {
     book: []const u8,
@@ -7,12 +8,11 @@ pub const BibleReference = struct {
     from_verse: u8,
     to_verse: ?u8 = null,
 
-    pub fn toString(self: BibleReference) ![]const u8 {
-        var buffer: [32]u8 = undefined;
+    pub fn toString(self: BibleReference, allocator: mem.Allocator) ![]const u8 {
         if (self.to_verse) |to_verse| {
-            return try fmt.bufPrint(buffer[0..], "{s} {d}:{d}-{d}", .{ self.book, self.chapter, self.from_verse, to_verse });
+            return try fmt.allocPrint(allocator, "{s} {d}:{d}-{d}", .{ self.book, self.chapter, self.from_verse, to_verse });
         } else {
-            return try fmt.bufPrint(buffer[0..], "{s} {d}:{d}", .{ self.book, self.chapter, self.from_verse });
+            return try fmt.allocPrint(allocator, "{s} {d}:{d}", .{ self.book, self.chapter, self.from_verse });
         }
     }
 };

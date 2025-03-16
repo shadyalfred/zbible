@@ -17,12 +17,12 @@ pub const WEBParser = struct {
     allocator: mem.Allocator,
 
     pub fn init(allocator: mem.Allocator) WEBParser {
-        return WEBParser {
+        return WEBParser{
             .allocator = allocator,
         };
     }
 
-    pub fn getBibleVerses(self: WEBParser, bible_reference: BibleReference) ![] const u8 {
+    pub fn getBibleVerses(self: WEBParser, bible_reference: BibleReference) ![]const u8 {
         const maybe_bible_file_name = getBibleBookFileName(bible_reference.book);
 
         if (maybe_bible_file_name == null) {
@@ -118,7 +118,6 @@ pub const WEBParser = struct {
             try verses.append('\n');
             try verses.appendSlice(try footnotes.toOwnedSlice());
         }
-
 
         return verses.toOwnedSlice();
     }
@@ -238,7 +237,7 @@ pub const WEBParser = struct {
                     else => {
                         i += 3;
                         continue;
-                    }
+                    },
                 }
             } else if (line[i] == ' ' and line[i + 1] == ' ') {
                 i += 1;
@@ -362,7 +361,6 @@ fn getBibleBookFileName(bible_book_name: []const u8) ?[]const u8 {
         return "59_4MAeng_web.usfm";
     } else if (mem.eql(u8, bible_book_name, "greek_daniel")) {
         return "66_DAGeng_web.usfm";
-
     } else if (mem.eql(u8, bible_book_name, "matthew")) {
         return "70_MATeng_web.usfm";
     } else if (mem.eql(u8, bible_book_name, "mark")) {

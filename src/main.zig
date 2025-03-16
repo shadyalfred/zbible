@@ -1,7 +1,7 @@
 const std = @import("std");
 const heap = std.heap;
 const process = std.process;
-const json = std.json;
+const io = std.io;
 
 const ArgumentParser = @import("./argument_parser.zig").ArgumentParser;
 const BibleReference = @import("./bible_reference.zig").BibleReference;
@@ -27,5 +27,5 @@ pub fn main() !void {
     const web_bible = WEBParser.init(allocator);
 
     const verses = try web_bible.getBibleVerses(bible_reference);
-    std.debug.print("{s}\n", .{verses});
+    try io.getStdOut().writer().print("{s}\n\n[{s}]\n", .{verses, try bible_reference.toString(allocator)});
 }
