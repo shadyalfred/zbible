@@ -101,13 +101,13 @@ pub const WEBParser = struct {
                 }
             }
             const maybe_verse_number = parseVerseNumber(line);
+            var maybe_verse_number_ss: ?[]const u8 = null;
             if (maybe_verse_number) |verse_number| {
                 if (bible_reference.to_verse) |to_verse| {
                     if (verse_number > to_verse) {
                         break;
                     } else {
-                        const verse_number_ss = try self.toSuperscript(verse_number);
-                        try verses.appendSlice(verse_number_ss);
+                        maybe_verse_number_ss = try self.toSuperscript(verse_number);
                     }
                 } else {
                     if (verse_number != bible_reference.from_verse) {
@@ -116,6 +116,16 @@ pub const WEBParser = struct {
                 }
             }
             const verse = try self.parseVerse(line, &footnotes);
+            if (maybe_verse_number_ss != null) {
+                const latest_char = verses.items[verses.items.len - 1];
+                if (
+                    ! (latest_char == '\n' or latest_char == '\t') and
+                    ! (verse[0] == '\n' or verse[0] == '\t')
+                ) {
+                    try verses.append(' ');
+                }
+                try verses.appendSlice(maybe_verse_number_ss.?);
+            }
             try verses.appendSlice(verse);
         }
 

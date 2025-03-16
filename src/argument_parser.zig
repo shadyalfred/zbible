@@ -271,6 +271,7 @@ fn expandAbbreviation(abbreviation: []const u8) ?[]const u8 {
 
         .{ "ps", "psalms" },
         .{ "pss", "psalms" },
+        .{ "psa", "psalms" },
         .{ "psalm", "psalms" },
 
         .{ "pr", "proverbs" },
