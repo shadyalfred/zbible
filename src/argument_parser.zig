@@ -221,6 +221,9 @@ pub fn collectArgsIntoSlice(allocator: mem.Allocator, args: *process.ArgIterator
         }
         try list.append(' ');
     }
+    if (list.items.len == 0) {
+        return list.toOwnedSlice();
+    }
     _ = list.pop();
     return list.toOwnedSlice();
 }

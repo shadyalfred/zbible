@@ -38,8 +38,10 @@ pub const WEBParser = struct {
 
         const bible_file_name = if (bible_reference.book == .Psalms and bible_reference.chapter == 151) "56_PS2eng_web.usfm" else maybe_bible_file_name.?;
 
-        var buffer: [64]u8 = undefined;
-        const web_usfm_file = try std.fs.cwd().openFile(try fmt.bufPrint(buffer[0..], "./eng-web-usfm/{s}", .{bible_file_name}), .{ .mode = .read_only });
+        const web_usfm_file = try std.fs.openFileAbsolute(
+            try fmt.allocPrint(self.allocator, "/usr/share/zbible/eng-web-usfm/{s}", .{bible_file_name}),
+            .{ .mode = .read_only }
+        );
         defer web_usfm_file.close();
 
         var buffered_reader = io.bufferedReader(web_usfm_file.reader());

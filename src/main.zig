@@ -20,6 +20,10 @@ pub fn main() !void {
 
     var args_it = try process.argsWithAllocator(allocator);
     const argument = try collectArgsIntoSlice(allocator, &args_it);
+    if (argument.len == 0) {
+        try io.getStdErr().writer().print("specify a book chapter:verse\n", .{});
+        std.process.exit(1);
+    }
 
     var argument_parser = ArgumentParser{ .allocator = allocator, .argument = argument };
     const bible_reference = try argument_parser.parse();
