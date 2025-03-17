@@ -167,7 +167,7 @@ pub const BibleBook = enum {
             .PrayerOfManasseh => "Prayer of Manasseh",
             .FirstMaccabees => "First Maccabees",
             .SecondMaccabees => "Second Maccabees",
-            .ThirdMaccabees => "Thrid Maccabees",
+            .ThirdMaccabees => "Third Maccabees",
             .FourthMaccabees => "Fourth Maccabees",
 
             .Matthew => "Matthew",
