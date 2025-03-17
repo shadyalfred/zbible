@@ -264,6 +264,11 @@ pub const WEBParser = struct {
 
                         self.allocator.free(temp);
                         temp = try mem.replaceOwned(u8, self.allocator, temp2, "\\fqa ", "");
+                        self.allocator.free(temp2);
+                        temp2 = try mem.replaceOwned(u8, self.allocator, temp, "\\fl ", "");
+
+                        self.allocator.free(temp);
+                        temp = try mem.replaceOwned(u8, self.allocator, temp2, "\\ft ", "");
 
                         try footnotes.append('\n');
                         try footnotes.appendSlice(verse_number);
