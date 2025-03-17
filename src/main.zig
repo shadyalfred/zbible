@@ -31,5 +31,9 @@ pub fn main() !void {
     const web_bible = WEBParser.init(allocator);
 
     const verses = try web_bible.getBibleVerses(bible_reference);
-    try io.getStdOut().writer().print("{s}\n\n[{s}]\n", .{verses, try bible_reference.toString(allocator)});
+    if (verses.len > 0 and verses[verses.len - 1] == '\n') {
+        try io.getStdOut().writer().print("{s}\n[{s}]\n", .{verses, try bible_reference.toString(allocator)});
+    } else {
+        try io.getStdOut().writer().print("{s}\n\n[{s}]\n", .{verses, try bible_reference.toString(allocator)});
+    }
 }
