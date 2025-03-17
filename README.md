@@ -1,5 +1,11 @@
 Uses the [World English Bible](https://worldenglish.bible/). Thanks to [eBible.org](https://ebible.org/) for providing the WEB in USFM format.
 
+`zbible book_name chapter:verse[-to_verse]`
+
+https://github.com/user-attachments/assets/26ef8b20-77d7-45d8-939d-e09baa90c95e
+
+
+
 # Installation
 ```sh
 zig build -Doptimize=ReleaseSafe
