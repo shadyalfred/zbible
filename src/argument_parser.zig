@@ -79,11 +79,11 @@ pub const ArgumentParser = struct {
                 else => return ParsingError.UnexpectedToken,
             };
             try book.appendSlice(book_number);
-            try book.append('_');
+            try book.append(' ');
         } else {
             if (self.parseCardinal()) |cardinal| {
                 try book.appendSlice(cardinal);
-                try book.append('_');
+                try book.append(' ');
             }
         }
 
@@ -457,12 +457,12 @@ fn getBibleBookEnum(bible_book_name: []const u8) ?BibleBook {
         .{ "joshua", .Joshua },
         .{ "judges", .Judges },
         .{ "ruth", .Ruth },
-        .{ "first_samuel", .FirstSamuel },
-        .{ "second_samuel", .SecondSamuel },
-        .{ "first_kings", .FirstKings },
-        .{ "second_kings", .SecondKings },
-        .{ "first_chronicles", .FirstChronicles },
-        .{ "second_chronicles", .SecondChronicles },
+        .{ "first samuel", .FirstSamuel },
+        .{ "second samuel", .SecondSamuel },
+        .{ "first kings", .FirstKings },
+        .{ "second kings", .SecondKings },
+        .{ "first chronicles", .FirstChronicles },
+        .{ "second chronicles", .SecondChronicles },
         .{ "ezra", .Ezra },
         .{ "nehemiah", .Nehemiah },
         .{ "esther", .Esther },
@@ -470,7 +470,7 @@ fn getBibleBookEnum(bible_book_name: []const u8) ?BibleBook {
         .{ "psalms", .Psalms },
         .{ "proverbs", .Proverbs },
         .{ "ecclesiastes", .Ecclesiastes },
-        .{ "song_of_solomon", .SongOfSolomon },
+        .{ "song of solomon", .SongOfSolomon },
         .{ "isaiah", .Isaiah },
         .{ "jeremiah", .Jeremiah },
         .{ "lamentations", .Lamentations },
@@ -491,18 +491,18 @@ fn getBibleBookEnum(bible_book_name: []const u8) ?BibleBook {
 
         .{ "tobit", .Tobit },
         .{ "judith", .Judith },
-        .{ "greek_esther", .GreekEsther },
+        .{ "greek esther", .GreekEsther },
         .{ "wisdom", .Wisdom },
         .{ "sirach", .Sirach },
         .{ "baruch", .Baruch },
-        .{ "first_maccabees", .FirstMaccabees },
-        .{ "second_maccabees", .SecondMaccabees },
-        .{ "first_esdras", .FirstEsdras },
-        .{ "prayer_of_manasseh", .PrayerOfManasseh },
-        .{ "third_maccabees", .ThirdMaccabees },
-        .{ "second_esdras", .SecondEsdras },
-        .{ "fourth_maccabees", .FourthMaccabees },
-        .{ "greek_daniel", .GreekDaniel },
+        .{ "first maccabees", .FirstMaccabees },
+        .{ "second maccabees", .SecondMaccabees },
+        .{ "first esdras", .FirstEsdras },
+        .{ "prayer of manasseh", .PrayerOfManasseh },
+        .{ "third maccabees", .ThirdMaccabees },
+        .{ "second esdras", .SecondEsdras },
+        .{ "fourth maccabees", .FourthMaccabees },
+        .{ "greek daniel", .GreekDaniel },
 
         .{ "matthew", .Matthew },
         .{ "mark", .Mark },
@@ -510,27 +510,27 @@ fn getBibleBookEnum(bible_book_name: []const u8) ?BibleBook {
         .{ "john", .John },
         .{ "acts", .Acts },
         .{ "romans", .Romans },
-        .{ "first_corinthians", .FirstCorinthians },
-        .{ "second_corinthians", .SecondCorinthians },
+        .{ "first corinthians", .FirstCorinthians },
+        .{ "second corinthians", .SecondCorinthians },
         .{ "galatians", .Galatians },
         .{ "ephesians", .Ephesians },
         .{ "philippians", .Philippians },
         .{ "colossians", .Colossians },
-        .{ "first_thessalonians", .FirstThessalonians },
-        .{ "second_thessalonians", .SecondThessalonians },
-        .{ "first_timothy", .FirstTimothy },
-        .{ "second_timothy", .SecondTimothy },
+        .{ "first thessalonians", .FirstThessalonians },
+        .{ "second thessalonians", .SecondThessalonians },
+        .{ "first timothy", .FirstTimothy },
+        .{ "second timothy", .SecondTimothy },
         .{ "titus", .Titus },
         .{ "philemon", .Philemon },
         .{ "hebrews", .Hebrews },
         .{ "james", .James },
-        .{ "first_peter", .FirstPeter },
-        .{ "second_peter", .SecondPeter },
-        .{ "first_john", .FirstJohn },
-        .{ "second_john", .SecondJohn },
-        .{ "third_john", .ThirdJohn },
+        .{ "first peter", .FirstPeter },
+        .{ "second peter", .SecondPeter },
+        .{ "first john", .FirstJohn },
+        .{ "second john", .SecondJohn },
+        .{ "third john", .ThirdJohn },
         .{ "jude", .Jude },
-        .{ "revelation_of_john", .Revelation },
+        .{ "revelation of john", .Revelation },
     });
 
     return bible_book_name_enum_map.get(bible_book_name);

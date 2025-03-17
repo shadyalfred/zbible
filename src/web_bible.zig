@@ -117,6 +117,9 @@ pub const WEBParser = struct {
                     }
                 }
             }
+            if (mem.startsWith(u8, line, "\\s")) {
+                continue;
+            }
             const verse = try self.parseVerse(line, &footnotes);
             if (maybe_verse_number_ss != null) {
                 const latest_char = verses.items[verses.items.len - 1];
@@ -195,8 +198,17 @@ pub const WEBParser = struct {
         var previous_indentation_level: u8 = 1;
         while (i < line.len) {
             if (line[i] == '\\') {
+                if (line[i + 1] == '+') {
+                    i += 1;
+                }
                 switch (line[i + 1]) {
                     'w' => {
+                        // skip `\wj`
+                        if (line[i + 2] == 'j') {
+                            i += 4;
+                            continue;
+                        }
+
                         // skip `\w `
                         i += 3;
 
@@ -239,24 +251,45 @@ pub const WEBParser = struct {
                         const ft_begin = mem.indexOfScalarPos(u8, line, fr_end + 1, ' ').? + 1;
                         const ft_end = mem.indexOfPosLinear(u8, line, ft_begin, "\\f*").?;
                         const ft_raw = line[ft_begin..ft_end];
-                        const temp = try mem.replaceOwned(u8, self.allocator, ft_raw, "\\+wh ", "");
-                        const ft = try mem.replaceOwned(u8, self.allocator, temp, "\\+wh*", "");
-                        defer self.allocator.free(ft);
+
+                        var temp = try mem.replaceOwned(u8, self.allocator, ft_raw, "\\+wh ", "");
+                        defer self.allocator.free(temp);
+                        var temp2 = try mem.replaceOwned(u8, self.allocator, temp, "\\+wh*", "");
+                        defer self.allocator.free(temp2);
+
                         self.allocator.free(temp);
+                        temp = try mem.replaceOwned(u8, self.allocator, temp2, "\\+bk ", "“");
+                        self.allocator.free(temp2);
+                        temp2 = try mem.replaceOwned(u8, self.allocator, temp, "\\+bk*", "”");
 
                         try footnotes.append('\n');
                         try footnotes.appendSlice(verse_number);
                         try footnotes.appendSlice(": ");
-                        try footnotes.appendSlice(ft);
+                        try footnotes.appendSlice(temp2[0..]);
 
                         i = ft_end + 3;
                     },
+                    'b' => {
+                        if (line[i + 2] == 'k') {
+                            if (line[i + 3] == '*') {
+                                try verse.appendSlice("”");
+                            } else {
+                                try verse.appendSlice("“");
+                            }
+                        }
+                        i += 4;
+                        continue;
+                    },
                     else => {
-                        i += 3;
+                        if (mem.indexOfScalarPos(u8, line, i, ' ')) |j| {
+                            i = j + 1;
+                        } else {
+                            i += 4;
+                        }
                         continue;
                     },
                 }
-            } else if (line[i] == ' ' and line[i + 1] == ' ') {
+            } else if (line[i] == ' ' and i + 1 < line.len and line[i + 1] == ' ') {
                 i += 1;
                 if (i == line.len - 1) {
                     i += 1;
