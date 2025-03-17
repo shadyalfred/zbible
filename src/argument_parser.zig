@@ -287,8 +287,8 @@ fn expandAbbreviation(abbreviation: []const u8) ?[]const u8 {
         .{ "qoh", "ecclesiastes" },
         .{ "qoheleth", "ecclesiastes" },
 
-        .{ "song", "song_of_solomon" },
-        .{ "song_of_songs", "song_of_solomon" },
+        .{ "song", "song of solomon" },
+        .{ "song of songs", "song of solomon" },
 
         .{ "is", "isaiah" },
         .{ "isa", "isaiah" },
@@ -306,11 +306,11 @@ fn expandAbbreviation(abbreviation: []const u8) ?[]const u8 {
         .{ "dn", "daniel" },
         .{ "dan", "daniel" },
 
-        .{ "add_dan", "greek_daniel" },
-        .{ "additions_dan", "greek_daniel" },
-        .{ "grk_dan", "greek_daniel" },
-        .{ "greek_dan", "greek_daniel" },
-        .{ "grk_daniel", "greek_daniel" },
+        .{ "add dan", "greek daniel" },
+        .{ "additions dan", "greek daniel" },
+        .{ "grk dan", "greek daniel" },
+        .{ "greek dan", "greek daniel" },
+        .{ "grk daniel", "greek daniel" },
 
         .{ "ho", "hosea" },
         .{ "hos", "hosea" },
@@ -350,13 +350,17 @@ fn expandAbbreviation(abbreviation: []const u8) ?[]const u8 {
         .{ "jth", "judith" },
         .{ "jdt", "judith" },
 
-        .{ "add_esth", "greek_esther" },
-        .{ "additions_esth", "greek_esther" },
-        .{ "grk_esth", "greek_esther" },
-        .{ "greek_esth", "greek_esther" },
+        .{ "add esth", "greek esther" },
+        .{ "additions esth", "greek esther" },
+        .{ "grk esth", "greek esther" },
+        .{ "greek esth", "greek esther" },
 
-        .{ "wi", "wisdom" },
-        .{ "wis", "wisdom" },
+        .{ "wi", "wisdom of solomon" },
+        .{ "wis", "wisdom of solomon" },
+        .{ "wisdom", "wisdom of solomon" },
+        .{ "wis solomon", "wisdom of solomon" },
+        .{ "wis of solomon", "wisdom of solomon" },
+        .{ "wisdom solomon", "wisdom of solomon" },
 
         .{ "sir", "sirach" },
         .{ "ecclus", "sirach" },
@@ -365,13 +369,13 @@ fn expandAbbreviation(abbreviation: []const u8) ?[]const u8 {
         .{ "ba", "baruch" },
         .{ "bar", "baruch" },
 
-        .{ "pr_azar", "prayer_of_azariah" },
+        .{ "pr azar", "prayer of azariah" },
 
         .{ "sus", "susanna" },
 
-        .{ "bel", "bel_and_the_dragon" },
+        .{ "bel", "bel and the dragon" },
 
-        .{ "pr_man", "prayer_of_manasseh" },
+        .{ "pr man", "prayer of manasseh" },
 
         .{ "mc", "maccabees" },
         .{ "ma", "maccabees" },
@@ -435,13 +439,13 @@ fn expandAbbreviation(abbreviation: []const u8) ?[]const u8 {
 
         .{ "ju", "jude" },
 
-        .{ "ap", "revelation_of_john" },
-        .{ "apoc", "revelation_of_john" },
-        .{ "apocalypse", "revelation_of_john" },
-        .{ "rv", "revelation_of_john" },
-        .{ "rev", "revelation_of_john" },
-        .{ "revelation", "revelation_of_john" },
-        .{ "revelation_to_john", "revelation_of_john" }
+        .{ "ap", "revelation of john" },
+        .{ "apoc", "revelation of john" },
+        .{ "apocalypse", "revelation of john" },
+        .{ "rv", "revelation of john" },
+        .{ "rev", "revelation of john" },
+        .{ "revelation", "revelation of john" },
+        .{ "revelation to john", "revelation of john" }
     });
 
     return abbreviations.get(abbreviation);
@@ -492,7 +496,7 @@ fn getBibleBookEnum(bible_book_name: []const u8) ?BibleBook {
         .{ "tobit", .Tobit },
         .{ "judith", .Judith },
         .{ "greek esther", .GreekEsther },
-        .{ "wisdom", .Wisdom },
+        .{ "wisdom of solomon", .Wisdom },
         .{ "sirach", .Sirach },
         .{ "baruch", .Baruch },
         .{ "first maccabees", .FirstMaccabees },
