@@ -282,9 +282,6 @@ pub const WEBParser = struct {
                         try footnotes.appendSlice(mem.trimRight(u8, temp[0..], " "));
 
                         i = ft_end + 3;
-                        while (i < line.len and line[i] == ' ') {
-                            i += 1;
-                        }
                     },
                     'b' => {
                         if (line[i + 2] == 'k') {
@@ -303,10 +300,16 @@ pub const WEBParser = struct {
                             try verse.append('\t');
                             i += 4;
                         } else {
+                            if (line.len == 3) {
+                                try verse.append(' ');
+                            }
                             // `\p`
-                            try verse.append(' ');
                             i += 3;
                         }
+                    },
+                    'x' => {
+                        // skip `\x...\x*`
+                        i = mem.indexOfPos(u8, line, i, "\\x*").? + 3;
                     },
                     else => {
                         if (mem.indexOfScalarPos(u8, line, i, ' ')) |j| {
