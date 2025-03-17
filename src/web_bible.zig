@@ -122,16 +122,22 @@ pub const WEBParser = struct {
             }
             const verse = try self.parseVerse(line, &footnotes);
             if (maybe_verse_number_ss != null) {
-                const latest_char = verses.items[verses.items.len - 1];
+                const last_char = verses.items[verses.items.len - 1];
                 if (
-                    ! (latest_char == '\n' or latest_char == '\t') and
-                    ! (verse[0] == '\n' or verse[0] == '\t')
+                    ! (last_char == '\n' or last_char == '\t' or last_char == ' ') and
+                    ! (verse[0] == '\n' or verse[0] == '\t' or verse[0] == ' ')
                 ) {
                     try verses.append(' ');
                 }
                 try verses.appendSlice(maybe_verse_number_ss.?);
             }
             try verses.appendSlice(verse);
+        }
+
+        if (verses.getLastOrNull()) |last_char| {
+            if (last_char == ' ') {
+                _ = verses.pop();
+            }
         }
 
         if (footnotes.items.len != 0) {
@@ -273,9 +279,12 @@ pub const WEBParser = struct {
                         try footnotes.append('\n');
                         try footnotes.appendSlice(verse_number);
                         try footnotes.appendSlice(": ");
-                        try footnotes.appendSlice(temp[0..]);
+                        try footnotes.appendSlice(mem.trimRight(u8, temp[0..], " "));
 
                         i = ft_end + 3;
+                        while (i < line.len and line[i] == ' ') {
+                            i += 1;
+                        }
                     },
                     'b' => {
                         if (line[i + 2] == 'k') {
@@ -288,13 +297,23 @@ pub const WEBParser = struct {
                         i += 4;
                         continue;
                     },
+                    'p' => {
+                        if (i + 2 < line.len and line[i + 2] == 'i') {
+                            // `\pi `
+                            try verse.append('\t');
+                            i += 4;
+                        } else {
+                            // `\p`
+                            try verse.append(' ');
+                            i += 3;
+                        }
+                    },
                     else => {
                         if (mem.indexOfScalarPos(u8, line, i, ' ')) |j| {
                             i = j + 1;
                         } else {
-                            i += 4;
+                            i += 3;
                         }
-                        continue;
                     },
                 }
             } else if (line[i] == ' ' and i + 1 < line.len and line[i + 1] == ' ') {
