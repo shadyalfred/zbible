@@ -9,7 +9,7 @@ const collectArgsIntoSlice = @import("./argument_parser.zig").collectArgsIntoSli
 const WEBParser = @import("web_bible.zig").WEBParser;
 
 pub fn main() !void {
-    const buffer = try heap.page_allocator.alloc(u8, 1024 * 1024);
+    const buffer = try heap.page_allocator.alloc(u8, 3 * 1024 * 1024);
     defer heap.page_allocator.free(buffer);
     var backing_allocator = heap.FixedBufferAllocator.init(buffer);
 
