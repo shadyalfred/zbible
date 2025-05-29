@@ -86,7 +86,7 @@ pub const WEBParser = struct {
                     if (mem.startsWith(u8, previous_line, "\\q")) {
                         var i = previous_line[2] - '0';
                         while (i > 0) : (i -= 1) {
-                            try verses.appendSlice("    ");
+                            try verses.append('\t');
                         }
                     }
                     found_verse = true;
@@ -134,7 +134,7 @@ pub const WEBParser = struct {
                 const last_char = verses.getLast();
                 if (
                     ! (last_char == '\n' or last_char == ' ') and
-                    ! (parsed_line[0] == '\n' or parsed_line[0] == ' ')
+                    ! (parsed_line[0] == '\n' or parsed_line[0] == ' ' or parsed_line[0] == '\t')
                 ) {
                     try verses.append(' ');
                 } else if (last_char == ' ' and last_char == parsed_line[0]) {
@@ -251,7 +251,7 @@ pub const WEBParser = struct {
                         var indentation_level = line[i + 2] - '0';
                         try verse.append('\n');
                         while (indentation_level > 0) : (indentation_level -= 1) {
-                            try verse.appendSlice("    ");
+                            try verse.append('\t');
                         }
                         previous_indentation_level = indentation_level;
                         i += 4;
@@ -328,6 +328,9 @@ pub const WEBParser = struct {
                     'x' => {
                         // skip `\x...\x*`
                         i = mem.indexOfPos(u8, line, i, "\\x*").? + 3;
+                    },
+                    'd' => {
+                        break;
                     },
                     else => {
                         if (mem.indexOfScalarPos(u8, line, i, ' ')) |j| {
