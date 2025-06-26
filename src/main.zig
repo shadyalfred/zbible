@@ -9,14 +9,13 @@ const collectArgsIntoSlice = @import("./argument_parser.zig").collectArgsIntoSli
 const WEBParser = @import("web_bible.zig").WEBParser;
 
 pub fn main() !void {
-    const buffer = try heap.page_allocator.alloc(u8, 4 * 1024 * 1024);
-    defer heap.page_allocator.free(buffer);
-    var backing_allocator = heap.FixedBufferAllocator.init(buffer);
+    var scratch_arena = heap.ArenaAllocator.init(heap.page_allocator);
+    defer scratch_arena.deinit();
 
-    var arena = heap.ArenaAllocator.init(backing_allocator.allocator());
-    defer arena.deinit();
+    var gpa = heap.GeneralPurposeAllocator(.{});
+    defer gpa.deinit();
 
-    const allocator = arena.allocator();
+    const allocator = gpa.allocator();
 
     var args_it = try process.argsWithAllocator(allocator);
     const argument = try collectArgsIntoSlice(allocator, &args_it);
@@ -28,7 +27,7 @@ pub fn main() !void {
     var argument_parser = ArgumentParser{ .allocator = allocator, .argument = argument };
     const bible_reference = try argument_parser.parse();
 
-    const web_bible = WEBParser.init(allocator);
+    const web_bible = WEBParser.init(allocator, &scratch_arena);
 
     const verses = try web_bible.getBibleVerses(bible_reference);
     if (verses.len > 0 and verses[verses.len - 1] == '\n') {

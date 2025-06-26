@@ -1,4 +1,5 @@
 const std = @import("std");
+const heap = std.heap;
 const fmt = std.fmt;
 const io = std.io;
 const hash = std.hash;
@@ -8,6 +9,8 @@ const ascii = std.ascii;
 const BibleReference = @import("bible_reference.zig").BibleReference;
 const BibleBook = @import("bible_reference.zig").BibleBook;
 
+const TokenIterator = @import("token_iterator.zig").TokenIterator;
+
 const Error = error{
     BibleBookNotFound,
     ChapterNotFound,
@@ -16,22 +19,28 @@ const Error = error{
 
 pub const WEBParser = struct {
     allocator: mem.Allocator,
+    scratch_arena: *heap.ArenaAllocator,
+    scratch_allocator: mem.Allocator,
 
-    pub fn init(allocator: mem.Allocator) WEBParser {
+    pub fn init(allocator: mem.Allocator, scratch_arena: *heap.ArenaAllocator) WEBParser {
         return WEBParser{
             .allocator = allocator,
+            .scratch_arena = scratch_arena,
         };
     }
 
     pub fn getBibleVerses(self: WEBParser, bible_reference: BibleReference) ![]const u8 {
+        defer self.scratch_arena.deinit();
+        self.scratch_allocator = self.scratch_arena.allocator();
+
         const maybe_bible_file_name = getBibleBookFileName(bible_reference.book);
 
         if (maybe_bible_file_name == null) {
             return Error.BibleBookNotFound;
         }
 
-        var verses = try std.ArrayList(u8).initCapacity(self.allocator, 4 * 1024);
-        defer verses.deinit();
+        var passage = try std.ArrayList(u8).initCapacity(self.allocator, 4 * 1024);
+        defer passage.deinit();
 
         var footnotes = try std.ArrayList(u8).initCapacity(self.allocator, 2 * 1024);
         defer footnotes.deinit();
@@ -39,7 +48,7 @@ pub const WEBParser = struct {
         const bible_file_name = if (bible_reference.book == .Psalms and bible_reference.chapter == 151) "56_PS2eng_web.usfm" else maybe_bible_file_name.?;
 
         const web_usfm_file = try std.fs.openFileAbsolute(
-            try fmt.allocPrint(self.allocator, "/usr/share/zbible/eng-web-usfm/{s}", .{bible_file_name}),
+            try fmt.allocPrint(self.scratch_allocator, "/usr/share/zbible/eng-web-usfm/{s}", .{bible_file_name}),
             .{ .mode = .read_only }
         );
         defer web_usfm_file.close();
@@ -47,119 +56,163 @@ pub const WEBParser = struct {
         var buffered_reader = io.bufferedReader(web_usfm_file.reader());
         var file_reader = buffered_reader.reader();
 
-        var found_chapter = false;
+        const file = try file_reader.readAllAlloc(self.scratch_allocator, 1024 * 1024);
+        defer self.scratch_allocator.free(file);
 
-        const file = try file_reader.readAllAlloc(self.allocator, 1024 * 1024);
-        defer self.allocator.free(file);
+        var lines_it = TokenIterator{ .buffer = file, .delimeter = '\n' };
 
-        var lines_it = mem.tokenizeScalar(u8, file, '\n');
+        for (bible_reference.verse_ranges) |verse_range| {
+            if (!self.findChapter(verse_range.from_chapter, &lines_it)) {
+                return Error.ChapterNotFound;
+            }
 
-        while (lines_it.next()) |line| {
-            const maybe_chapter = parseChapter(line);
-            if (maybe_chapter) |chapter| {
-                if (
-                    chapter == bible_reference.chapter or
-                    (bible_reference.book == .Psalms and bible_reference.chapter == 151)
-                ) {
-                    found_chapter = true;
-                    break;
+            if (verse_range.from_verse) |from_verse| {
+                if (!self.findVerse(from_verse, &lines_it)) {
+                    return Error.VerseNotFound;
+                }
+            } else {
+                while (lines_it.next()) |line| {
+                    if (self.parseChapter(line)) {
+                        break;
+                    }
+
+                    passage.appendSlice(try self.parseLine(line, &footnotes));
                 }
             }
         }
 
-        if (!found_chapter) {
-            return Error.ChapterNotFound;
-        }
+        // while (lines_it.next()) |line| {
+        //     const maybe_chapter = parseChapter(line);
+        //     if (maybe_chapter) |chapter| {
+        //         if (
+        //             chapter == bible_reference.chapter or
+        //             (bible_reference.book == .Psalms and bible_reference.chapter == 151)
+        //         ) {
+        //             found_chapter = true;
+        //             break;
+        //         }
+        //     }
+        // }
+        //
+        // if (!found_chapter) {
+        //     return Error.ChapterNotFound;
+        // }
+        //
+        // var found_verse = false;
+        // while (lines_it.peek()) |line| : (_ = lines_it.next()) {
+        //     const maybe_chapter = parseChapter(line);
+        //     if (maybe_chapter) |chapter| {
+        //         if (chapter != bible_reference.chapter) {
+        //             break;
+        //         }
+        //     }
+        //     const maybe_verse_number = parseVerseNumber(line);
+        //     if (maybe_verse_number) |verse_number| {
+        //         if (verse_number == bible_reference.from_verse) {
+        //             const previous_line = lines_it.buffer[lines_it.index-4..lines_it.index];
+        //             if (mem.startsWith(u8, previous_line, "\\q")) {
+        //                 var i = previous_line[2] - '0';
+        //                 while (i > 0) : (i -= 1) {
+        //                     try verses.append('\t');
+        //                 }
+        //             }
+        //             found_verse = true;
+        //             break;
+        //         }
+        //     }
+        // }
+        //
+        // if (!found_verse) {
+        //     return Error.VerseNotFound;
+        // }
+        //
+        // while (lines_it.next()) |line| {
+        //     const maybe_chapter = parseChapter(line);
+        //     if (maybe_chapter) |chapter| {
+        //         if (chapter != bible_reference.chapter) {
+        //             break;
+        //         }
+        //     }
+        //
+        //     const maybe_verse_number = parseVerseNumber(line);
+        //     var maybe_verse_number_ss: ?[]const u8 = null;
+        //     if (maybe_verse_number) |verse_number| {
+        //         if (bible_reference.to_verse) |to_verse| {
+        //             if (verse_number > to_verse) {
+        //                 break;
+        //             }
+        //         } else {
+        //             if (verse_number != bible_reference.from_verse) {
+        //                 break;
+        //             }
+        //         }
+        //         maybe_verse_number_ss = try self.toSuperscript(verse_number);
+        //     }
+        //     if (mem.startsWith(u8, line, "\\s")) {
+        //         continue;
+        //     }
+        //
+        //     const parsed_line = try self.parseLine(line, &footnotes);
+        //     if (parsed_line.len == 0) {
+        //         continue;
+        //     }
+        //
+        //     if (verses.items.len > 0) {
+        //         const last_char = verses.getLast();
+        //         if (
+        //             ! (last_char == '\n' or last_char == ' ') and
+        //             ! (parsed_line[0] == '\n' or parsed_line[0] == ' ' or parsed_line[0] == '\t')
+        //         ) {
+        //             try verses.append(' ');
+        //         } else if (last_char == ' ' and last_char == parsed_line[0]) {
+        //             _ = verses.pop();
+        //         }
+        //     }
+        //
+        //     if (maybe_verse_number_ss) |verse_number_ss| {
+        //         try verses.appendSlice(verse_number_ss);
+        //     }
+        //     try verses.appendSlice(parsed_line);
+        // }
+        //
+        // if (verses.getLastOrNull()) |last_char| {
+        //     if (last_char == ' ') {
+        //         _ = verses.pop();
+        //     }
+        // }
+        //
+        // if (footnotes.items.len != 0) {
+        //     try verses.append('\n');
+        //     try verses.appendSlice(try footnotes.toOwnedSlice());
+        // }
 
-        var found_verse = false;
+        return passage.toOwnedSlice();
+    }
+
+    fn findChapter(self: WEBParser, chapter: u8, lines_it: *TokenIterator) bool {
+        for (lines_it.next()) |line| {
+            if (self.parseChapter(line)) |parsed_chapter| {
+                if (parsed_chapter == chapter) {
+                    return true;
+                } else if (parsed_chapter > chapter) {
+                    return false;
+                }
+            }
+        }
+        return false;
+    }
+
+    fn findVerse(self: WEBParser, verse_number: u8, lines_it: *TokenIterator) bool {
         while (lines_it.peek()) |line| : (_ = lines_it.next()) {
-            const maybe_chapter = parseChapter(line);
-            if (maybe_chapter) |chapter| {
-                if (chapter != bible_reference.chapter) {
-                    break;
-                }
-            }
-            const maybe_verse_number = parseVerseNumber(line);
-            if (maybe_verse_number) |verse_number| {
-                if (verse_number == bible_reference.from_verse) {
-                    const previous_line = lines_it.buffer[lines_it.index-4..lines_it.index];
-                    if (mem.startsWith(u8, previous_line, "\\q")) {
-                        var i = previous_line[2] - '0';
-                        while (i > 0) : (i -= 1) {
-                            try verses.append('\t');
-                        }
-                    }
-                    found_verse = true;
-                    break;
+            if (self.parseVerseNumber(line)) |parsed_verse_number| {
+                if (parsed_verse_number == verse_number) {
+                    return true;
+                } else if (parsed_verse_number > verse_number) {
+                    return false;
                 }
             }
         }
-
-        if (!found_verse) {
-            return Error.VerseNotFound;
-        }
-
-        while (lines_it.next()) |line| {
-            const maybe_chapter = parseChapter(line);
-            if (maybe_chapter) |chapter| {
-                if (chapter != bible_reference.chapter) {
-                    break;
-                }
-            }
-
-            const maybe_verse_number = parseVerseNumber(line);
-            var maybe_verse_number_ss: ?[]const u8 = null;
-            if (maybe_verse_number) |verse_number| {
-                if (bible_reference.to_verse) |to_verse| {
-                    if (verse_number > to_verse) {
-                        break;
-                    }
-                } else {
-                    if (verse_number != bible_reference.from_verse) {
-                        break;
-                    }
-                }
-                maybe_verse_number_ss = try self.toSuperscript(verse_number);
-            }
-            if (mem.startsWith(u8, line, "\\s")) {
-                continue;
-            }
-
-            const parsed_line = try self.parseLine(line, &footnotes);
-            if (parsed_line.len == 0) {
-                continue;
-            }
-
-            if (verses.items.len > 0) {
-                const last_char = verses.getLast();
-                if (
-                    ! (last_char == '\n' or last_char == ' ') and
-                    ! (parsed_line[0] == '\n' or parsed_line[0] == ' ' or parsed_line[0] == '\t')
-                ) {
-                    try verses.append(' ');
-                } else if (last_char == ' ' and last_char == parsed_line[0]) {
-                    _ = verses.pop();
-                }
-            }
-
-            if (maybe_verse_number_ss) |verse_number_ss| {
-                try verses.appendSlice(verse_number_ss);
-            }
-            try verses.appendSlice(parsed_line);
-        }
-
-        if (verses.getLastOrNull()) |last_char| {
-            if (last_char == ' ') {
-                _ = verses.pop();
-            }
-        }
-
-        if (footnotes.items.len != 0) {
-            try verses.append('\n');
-            try verses.appendSlice(try footnotes.toOwnedSlice());
-        }
-
-        return verses.toOwnedSlice();
+        return false;
     }
 
     fn toSuperscript(self: WEBParser, number: u8) ![]const u8 {
@@ -453,6 +506,5 @@ fn getBibleBookFileName(bible_book: BibleBook) ?[]const u8 {
         .ThirdJohn => "94_3JNeng_web.usfm",
         .Jude => "95_JUDeng_web.usfm",
         .Revelation => "96_REVeng_web.usfm"
-
     };
 }

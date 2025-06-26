@@ -6,12 +6,143 @@ const process = std.process;
 const ascii = std.ascii;
 
 const BibleReference = @import("bible_reference.zig").BibleReference;
+const VerseRange = @import("bible_reference.zig").VerseRange;
 const BibleBook = @import("bible_reference.zig").BibleBook;
 
 const ParsingError = error{
     UnexpectedToken,
     OutOfBounds,
     BibleBookNotFound,
+    MissingStartingVerseNumber,
+};
+
+const VerseRangeParser = struct {
+    buffer: []const u8,
+    i: usize = 0,
+    previous_chapter: u8 = 0,
+
+    pub fn parse(self: *VerseRangeParser) !VerseRange {
+        self.eatWhitespaces();
+
+        var from_chapter: u8 = undefined;
+        var from_verse: ?u8 = null;
+        var to_verse: ?u8 = null;
+        var to_chapter: ?u8 = null;
+
+        if (mem.indexOfScalar(u8, self.buffer, ':') != null) {
+            from_chapter = try self.parseNumber();
+            if (self.peekChar() == ':') {
+                _ = self.eatChar();
+                from_verse = try self.parseNumber();
+            } else {
+                return ParsingError.UnexpectedToken;
+            }
+        } else {
+            from_chapter = self.previous_chapter;
+            from_verse = try self.parseNumber();
+        }
+
+        if (self.peekChar() == '-') {
+            _ = self.eatChar();
+            if (self.i == self.buffer.len) {
+                return ParsingError.OutOfBounds;
+            }
+
+            if (mem.indexOfScalar(u8, self.buffer[self.i..], ':') != null) {
+                to_chapter = try self.parseNumber();
+                if (!self.eatChar()) {
+                    return ParsingError.OutOfBounds;
+                }
+                to_verse = try self.parseNumber();
+            } else {
+                to_verse = try self.parseNumber();
+            }
+        }
+
+
+        return VerseRange {
+            .from_chapter = from_chapter,
+            .from_verse = from_verse,
+            .to_chapter = to_chapter,
+            .to_verse = to_verse
+        };
+    }
+
+    pub fn parseFirstRange(self: *VerseRangeParser) !VerseRange {
+        self.eatWhitespaces();
+
+        const from_chapter = try self.parseNumber();
+
+        var from_verse: ?u8 = null;
+        var to_verse: ?u8 = null;
+        var to_chapter: ?u8 = null;
+
+        if (self.i < self.buffer.len and self.buffer[self.i] == ':') {
+            _ = self.eatChar();
+            from_verse = try self.parseNumber();
+        }
+
+        if (self.i < self.buffer.len and self.buffer[self.i] == '-') {
+            if (from_verse == null) {
+                return ParsingError.MissingStartingVerseNumber;
+            }
+
+            _ = self.eatChar();
+
+            if (mem.indexOfScalar(u8, self.buffer[self.i..], ':') != null) {
+                to_chapter = try self.parseNumber();
+                _ = self.eatChar();
+            }
+
+            to_verse = self.parseNumber() catch @panic("Missing ending verse");
+        }
+
+        return VerseRange {
+            .from_chapter = from_chapter,
+            .from_verse = from_verse,
+            .to_chapter = to_chapter,
+            .to_verse = to_verse
+        };
+    }
+
+    fn parseNumber(self: *VerseRangeParser) !u8 {
+        if (self.i >= self.buffer.len) {
+            return ParsingError.OutOfBounds;
+        }
+
+        _ = self.eatWhitespaces();
+
+        var j = self.i;
+        while (j < self.buffer.len and ascii.isDigit(self.buffer[j])) {
+            j += 1;
+        }
+        const number = try fmt.parseInt(u8, self.buffer[self.i..j], 10);
+        self.i = j;
+        _ = self.eatWhitespaces();
+        return number;
+    }
+
+    fn eatChar(self: *VerseRangeParser) bool {
+        if (self.i >= self.buffer.len) {
+            return false;
+        }
+        self.i += 1;
+        return true;
+    }
+
+    fn eatWhitespaces(self: *VerseRangeParser) void {
+        while (self.i < self.buffer.len and ascii.isWhitespace(self.buffer[self.i])) {
+            self.i += 1;
+        }
+    }
+
+    fn peekChar(self: VerseRangeParser) u8 {
+        if (self.i >= self.buffer.len) {
+            return 0;
+        }
+
+        return self.buffer[self.i];
+    }
 };
 
 pub const ArgumentParser = struct {
@@ -21,20 +152,35 @@ pub const ArgumentParser = struct {
 
     pub fn parse(self: *ArgumentParser) !BibleReference {
         const book = try self.parseBook();
-        const chapter = try self.parseChapter();
-        const from_verse = try self.parseVerse();
 
-        if (self.i != self.argument.len) {
-            if (self.argument[self.i] == '-') {
-                // skip `-`
-                _ = self.eatChar();
-            }
-            const to_verse = try self.parseVerse();
-            return BibleReference{ .book = book, .chapter = chapter, .from_verse = from_verse, .to_verse = to_verse };
+        var verse_ranges = try std.ArrayList(VerseRange).initCapacity(self.allocator, 4);
+        defer verse_ranges.deinit();
+
+        var verse_range_it = mem.tokenizeScalar(u8, self.argument[self.i..], ',');
+
+        var verse_range_parser = VerseRangeParser {
+            .buffer = verse_range_it.next().?,
+        };
+
+        try verse_ranges.append(try verse_range_parser.parseFirstRange());
+
+        var previous_chapter = verse_ranges.items[0].from_chapter;
+
+        while (verse_range_it.next()) |verse_range_str| {
+            verse_range_parser.buffer = verse_range_str;
+            verse_range_parser.i = 0;
+            verse_range_parser.previous_chapter = previous_chapter;
+
+            try verse_ranges.append(try verse_range_parser.parse());
+            previous_chapter = verse_ranges.getLast().from_chapter;
         }
 
-        return BibleReference{ .book = book, .chapter = chapter, .from_verse = from_verse };
+        return BibleReference {
+            .book = book,
+            .verse_ranges = try verse_ranges.toOwnedSlice()
+        };
     }
+
 
     fn parseVerse(self: *ArgumentParser) !u8 {
         if (self.i >= self.argument.len) {
@@ -542,7 +688,7 @@ fn getBibleBookEnum(bible_book_name: []const u8) ?BibleBook {
 
 test "parse" {
     const testing = std.testing;
-    const heap = std.heap;
+    const allocator = testing.allocator;
 
     const arguments = [_][]const u8{
         "1 kngs 2:3",
@@ -551,29 +697,151 @@ test "parse" {
         "ex 10:11",
         "psalms 1:1",
         "psalm 110:5",
+        "ps 2:1-2, 3, 4, 5-7",
+        "ps 3:1-2, 3, 4:1-3, 5-7",
+        "1 thess 1:1-2:1, 2:2-3:1",
     };
 
     const bible_references = [_]BibleReference{
-        BibleReference{ .book = "first_kings", .chapter = 2, .from_verse = 3, .to_verse = null },
-        BibleReference{ .book = "genesis", .chapter = 1, .from_verse = 1, .to_verse = null },
-        BibleReference{ .book = "john", .chapter = 1, .from_verse = 1, .to_verse = null },
-        BibleReference{ .book = "exodus", .chapter = 10, .from_verse = 11, .to_verse = null },
-        BibleReference{ .book = "psalms", .chapter = 1, .from_verse = 1, .to_verse = null },
-        BibleReference{ .book = "psalms", .chapter = 110, .from_verse = 5, .to_verse = null },
+        BibleReference{
+            .book = .FirstKings,
+            .verse_ranges = &[_]VerseRange{
+                VerseRange{
+                    .from_chapter = 2,
+                    .from_verse = 3
+                }
+            }
+        },
+        BibleReference{
+            .book = .Genesis,
+            .verse_ranges = &[_]VerseRange{
+                VerseRange{
+                    .from_chapter = 1,
+                    .from_verse = 1
+                }
+            }
+        },
+        BibleReference{
+            .book = .John,
+            .verse_ranges = &[_]VerseRange{
+                VerseRange{
+                    .from_chapter = 1,
+                    .from_verse = 1
+                }
+            }
+        },
+        BibleReference{
+            .book = .Exodus,
+            .verse_ranges = &[_]VerseRange{
+                VerseRange{
+                    .from_chapter = 10,
+                    .from_verse = 11,
+                }
+            }
+        },
+        BibleReference{
+            .book = .Psalms,
+            .verse_ranges = &[_]VerseRange{
+                VerseRange{
+                    .from_chapter = 1,
+                    .from_verse = 1,
+                }
+            }
+        },
+        BibleReference{
+            .book = .Psalms,
+            .verse_ranges = &[_]VerseRange{
+                VerseRange{
+                    .from_chapter = 110,
+                    .from_verse = 5,
+                }
+            }
+        },
+        BibleReference{
+            .book = .Psalms,
+            .verse_ranges = &[_]VerseRange{
+                VerseRange{
+                    .from_chapter = 2,
+                    .from_verse = 1,
+                    .to_verse = 2,
+                },
+                VerseRange{
+                    .from_chapter = 2,
+                    .from_verse = 3,
+                },
+                VerseRange{
+                    .from_chapter = 2,
+                    .from_verse = 4,
+                },
+                VerseRange{
+                    .from_chapter = 2,
+                    .from_verse = 5,
+                    .to_verse = 7,
+                },
+            }
+        },
+        BibleReference{
+            .book = .Psalms,
+            .verse_ranges = &[_]VerseRange{
+                VerseRange{
+                    .from_chapter = 3,
+                    .from_verse = 1,
+                    .to_verse = 2,
+                },
+                VerseRange{
+                    .from_chapter = 3,
+                    .from_verse = 3,
+                },
+                VerseRange{
+                    .from_chapter = 4,
+                    .from_verse = 1,
+                    .to_verse = 3,
+                },
+                VerseRange{
+                    .from_chapter = 4,
+                    .from_verse = 5,
+                    .to_verse = 7,
+                },
+            }
+        },
+        BibleReference{
+            .book = .FirstThessalonians,
+            .verse_ranges = &[_]VerseRange{
+                VerseRange{
+                    .from_chapter = 1,
+                    .from_verse = 1,
+                    .to_chapter = 2,
+                    .to_verse = 1,
+                },
+                VerseRange{
+                    .from_chapter = 2,
+                    .from_verse = 2,
+                    .to_chapter = 3,
+                    .to_verse = 1,
+                },
+            }
+        },
     };
 
     for (arguments, bible_references) |argument, bible_reference| {
-        var arena = heap.ArenaAllocator.init(testing.allocator);
-        defer arena.deinit();
-        const allocator = arena.allocator();
-
-        debug.print("parsing:\t`{s}`\n", .{argument});
+        debug.print("Parsing:\t`{s}`\n", .{argument});
         var argument_parser = ArgumentParser{ .argument = argument, .allocator = allocator };
+
         const parsed_bible_ref = try argument_parser.parse();
-        debug.print("parsed:\t\t`{s}`\n", .{try parsed_bible_ref.toString()});
-        debug.assert(mem.eql(u8, parsed_bible_ref.book, bible_reference.book));
-        debug.assert(parsed_bible_ref.chapter == bible_reference.chapter);
-        debug.assert(parsed_bible_ref.from_verse == bible_reference.from_verse);
-        debug.assert(parsed_bible_ref.to_verse == bible_reference.to_verse);
+        defer parsed_bible_ref.deinit(allocator);
+
+        const parsed_bible_ref_str = try parsed_bible_ref.toString(allocator);
+        defer allocator.free(parsed_bible_ref_str);
+
+        debug.print("Parsed:\t\t`{s}`\n\n", .{parsed_bible_ref_str});
+
+        debug.assert(parsed_bible_ref.book == bible_reference.book);
+        debug.assert(parsed_bible_ref.verse_ranges.len == bible_reference.verse_ranges.len);
+        for (parsed_bible_ref.verse_ranges, bible_reference.verse_ranges) |verse_range, expected_verse_range| {
+            debug.assert(verse_range.from_chapter == expected_verse_range.from_chapter);
+            debug.assert(verse_range.to_chapter == expected_verse_range.to_chapter);
+            debug.assert(verse_range.from_verse == expected_verse_range.from_verse);
+            debug.assert(verse_range.to_verse == expected_verse_range.to_verse);
+        }
     }
 }
