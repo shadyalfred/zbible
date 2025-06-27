@@ -9,30 +9,42 @@ const collectArgsIntoSlice = @import("./argument_parser.zig").collectArgsIntoSli
 const WEBParser = @import("web_bible.zig").WEBParser;
 
 pub fn main() !void {
-    var scratch_arena = heap.ArenaAllocator.init(heap.page_allocator);
-    defer scratch_arena.deinit();
+    var arena_impl = heap.ArenaAllocator.init(heap.page_allocator);
+    defer arena_impl.deinit();
 
-    var gpa = heap.GeneralPurposeAllocator(.{});
-    defer gpa.deinit();
+    var gpa_impl: heap.GeneralPurposeAllocator(.{}) = .init;
+    defer _ = gpa_impl.deinit();
 
-    const allocator = gpa.allocator();
+    const gpa = gpa_impl.allocator();
 
-    var args_it = try process.argsWithAllocator(allocator);
-    const argument = try collectArgsIntoSlice(allocator, &args_it);
+    var args_it = try process.argsWithAllocator(gpa);
+    defer args_it.deinit();
+    const argument = try collectArgsIntoSlice(gpa, &args_it);
+    defer gpa.free(argument);
+
     if (argument.len == 0) {
         try io.getStdErr().writer().print("specify a book chapter:verse\n", .{});
         std.process.exit(1);
     }
 
-    var argument_parser = ArgumentParser{ .allocator = allocator, .argument = argument };
+    var argument_parser = ArgumentParser{ .allocator = gpa, .argument = argument };
     const bible_reference = try argument_parser.parse();
+    defer bible_reference.deinit(gpa);
 
-    const web_bible = WEBParser.init(allocator, &scratch_arena);
+    var web_bible = WEBParser.init(gpa, &arena_impl);
 
-    const verses = try web_bible.getBibleVerses(bible_reference);
-    if (verses.len > 0 and verses[verses.len - 1] == '\n') {
-        try io.getStdOut().writer().print("{s}\n[{s}]\n", .{verses, try bible_reference.toString(allocator)});
+    const passage = try web_bible.getBibleVerses(bible_reference);
+    defer gpa.free(passage);
+
+    _ = arena_impl.reset(.retain_capacity);
+
+    const bible_reference_str = try bible_reference.toString(gpa);
+    defer gpa.free(bible_reference_str);
+
+    const std_out = io.getStdOut().writer();
+    if (passage.len > 0 and passage[passage.len - 1] == '\n') {
+        try std_out.print("{s}\n[{s}]\n", .{passage, bible_reference_str});
     } else {
-        try io.getStdOut().writer().print("{s}\n\n[{s}]\n", .{verses, try bible_reference.toString(allocator)});
+        try std_out.print("{s}\n\n[{s}]\n", .{passage, bible_reference_str});
     }
 }

@@ -1,6 +1,6 @@
 pub const TokenIterator = struct {
     buffer: []const u8,
-    delimeter: u8,
+    delimiter: u8,
     index: usize = 0,
     previous_index: ?usize = null,
 
@@ -11,7 +11,7 @@ pub const TokenIterator = struct {
         return result;
     }
 
-    pub fn peek(self: TokenIterator) ?[]const u8 {
+    pub fn peek(self: *TokenIterator) ?[]const u8 {
         while (self.index < self.buffer.len and self.isDelimiter(self.index)) : (self.index += 1) {}
         const start = self.index;
         if (start == self.buffer.len) {

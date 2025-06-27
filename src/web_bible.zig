@@ -5,6 +5,7 @@ const io = std.io;
 const hash = std.hash;
 const mem = std.mem;
 const ascii = std.ascii;
+const fs = std.fs;
 
 const BibleReference = @import("bible_reference.zig").BibleReference;
 const BibleBook = @import("bible_reference.zig").BibleBook;
@@ -18,20 +19,20 @@ const Error = error{
 };
 
 pub const WEBParser = struct {
-    allocator: mem.Allocator,
-    scratch_arena: *heap.ArenaAllocator,
-    scratch_allocator: mem.Allocator,
+    gpa: mem.Allocator,
+    arena_impl: *heap.ArenaAllocator,
+    arena: mem.Allocator,
 
-    pub fn init(allocator: mem.Allocator, scratch_arena: *heap.ArenaAllocator) WEBParser {
+    pub fn init(gpa: mem.Allocator, arena_impl: *heap.ArenaAllocator) WEBParser {
         return WEBParser{
-            .allocator = allocator,
-            .scratch_arena = scratch_arena,
+            .gpa = gpa,
+            .arena_impl = arena_impl,
+            .arena = arena_impl.allocator(),
         };
     }
 
     pub fn getBibleVerses(self: WEBParser, bible_reference: BibleReference) ![]const u8 {
-        defer self.scratch_arena.deinit();
-        self.scratch_allocator = self.scratch_arena.allocator();
+        defer _ = self.arena_impl.reset(.free_all);
 
         const maybe_bible_file_name = getBibleBookFileName(bible_reference.book);
 
@@ -39,16 +40,16 @@ pub const WEBParser = struct {
             return Error.BibleBookNotFound;
         }
 
-        var passage = try std.ArrayList(u8).initCapacity(self.allocator, 4 * 1024);
+        var passage = try std.ArrayList(u8).initCapacity(self.gpa, 4 * 1024);
         defer passage.deinit();
 
-        var footnotes = try std.ArrayList(u8).initCapacity(self.allocator, 2 * 1024);
+        var footnotes = try std.ArrayList(u8).initCapacity(self.gpa, 2 * 1024);
         defer footnotes.deinit();
 
-        const bible_file_name = if (bible_reference.book == .Psalms and bible_reference.chapter == 151) "56_PS2eng_web.usfm" else maybe_bible_file_name.?;
+        const bible_file_name = if (bible_reference.book == .Psalms and bible_reference.verse_ranges[0].from_chapter == 151) "56_PS2eng_web.usfm" else maybe_bible_file_name.?;
 
-        const web_usfm_file = try std.fs.openFileAbsolute(
-            try fmt.allocPrint(self.scratch_allocator, "/usr/share/zbible/eng-web-usfm/{s}", .{bible_file_name}),
+        const web_usfm_file = try fs.openFileAbsolute(
+            try fmt.allocPrint(self.arena, "/usr/share/zbible/eng-web-usfm/{s}", .{bible_file_name}),
             .{ .mode = .read_only }
         );
         defer web_usfm_file.close();
@@ -56,142 +57,160 @@ pub const WEBParser = struct {
         var buffered_reader = io.bufferedReader(web_usfm_file.reader());
         var file_reader = buffered_reader.reader();
 
-        const file = try file_reader.readAllAlloc(self.scratch_allocator, 1024 * 1024);
-        defer self.scratch_allocator.free(file);
+        const file = try file_reader.readAllAlloc(self.gpa, 1024 * 1024);
+        defer self.gpa.free(file);
 
-        var lines_it = TokenIterator{ .buffer = file, .delimeter = '\n' };
+        var lines_it = TokenIterator{ .buffer = file, .delimiter = '\n' };
 
         for (bible_reference.verse_ranges) |verse_range| {
-            if (!self.findChapter(verse_range.from_chapter, &lines_it)) {
+            _ = self.arena_impl.reset(.retain_capacity);
+
+            if (!findChapter(verse_range.from_chapter, &lines_it)) {
                 return Error.ChapterNotFound;
             }
 
             if (verse_range.from_verse) |from_verse| {
-                if (!self.findVerse(from_verse, &lines_it)) {
+                if (!findVerse(from_verse, &lines_it)) {
                     return Error.VerseNotFound;
                 }
+
+                // TODO refactor into its own function to parse \q1
+                if (try self.parseLine(lines_it.peekBackwards().?, &footnotes, verse_range.from_chapter, false)) |parsed_line| {
+                    if (parsed_line[0] == '\n') {
+                        try passage.appendSlice(parsed_line[1..]);
+                    } else {
+                        try passage.appendSlice(parsed_line);
+                    }
+                }
+
+                // single verse
+                if (verse_range.to_verse == null) {
+                    while (lines_it.next()) |line| {
+                        if (parseChapter(line)) |_| {
+                            break;
+                        }
+
+                        if (parseVerseNumber(line)) |current_verse_number| {
+                            if (current_verse_number != from_verse) {
+                                break;
+                            }
+                        }
+
+                        if (try self.parseLine(line, &footnotes, verse_range.from_chapter, false)) |parsed_line| {
+                            try passage.appendSlice(parsed_line);
+                            _ = self.arena_impl.reset(.retain_capacity);
+                        }
+                    }
+
+                    continue;
+                }
             } else {
+                // a whole chapter
                 while (lines_it.next()) |line| {
-                    if (self.parseChapter(line)) {
+                    defer _ = self.arena_impl.reset(.retain_capacity);
+
+                    if (parseChapter(line)) |_| {
                         break;
                     }
 
-                    passage.appendSlice(try self.parseLine(line, &footnotes));
+                    if (try self.parseLine(line, &footnotes, verse_range.from_chapter, false)) |parsed_line| {
+                        if (passage.items.len == 0 and parsed_line[0] == '\n') {
+                            try passage.appendSlice(parsed_line[1..]);
+                        } else {
+                            try passage.appendSlice(parsed_line);
+                        }
+                    }
                 }
+
+                continue;
+            }
+
+            // chapter range
+            if (verse_range.to_chapter) |to_chapter| {
+                var current_chapter_number = verse_range.from_chapter;
+                var should_print_chapter_number = true;
+                var should_reset = false;
+
+                while (lines_it.next()) |line| {
+                    defer _ = self.arena_impl.reset(.retain_capacity);
+
+                    if (parseChapter(line)) |current_chapter| {
+                        if (current_chapter > to_chapter) {
+                            break;
+                        }
+
+                        current_chapter_number = current_chapter;
+                        should_print_chapter_number = true;
+                        continue;
+                    } else if (parseVerseNumber(line)) |current_verse_number| {
+                        if (current_chapter_number == to_chapter and current_verse_number > verse_range.to_verse.?) {
+                            break;
+                        }
+                        if (should_print_chapter_number) {
+                            should_reset = true;
+                        }
+                    }
+
+                    if (try self.parseLine(line, &footnotes, current_chapter_number, should_print_chapter_number)) |parsed_line| {
+                        if (passage.items.len == 0 and parsed_line[0] == '\n') {
+                            try passage.appendSlice(parsed_line[1..]);
+                        } else {
+                            try passage.appendSlice(parsed_line);
+                        }
+                    }
+
+                    if (should_reset) {
+                        should_print_chapter_number = false;
+                        should_reset = false;
+                    }
+                }
+
+                continue;
+            // verse range in the same chapter
+            } else {
+                while (lines_it.next()) |line| {
+                    defer _ = self.arena_impl.reset(.retain_capacity);
+
+                    if (parseChapter(line)) |_| {
+                        break;
+                    } else if (parseVerseNumber(line)) |verse_number| {
+                        if (verse_number > verse_range.to_verse.?) {
+                            break;
+                        }
+                    }
+
+                    if (try self.parseLine(line, &footnotes, verse_range.from_chapter, false)) |parsed_line| {
+                        if (passage.items.len == 0 and parsed_line[0] == '\n') {
+                            try passage.appendSlice(parsed_line[1..]);
+                        } else {
+                            try passage.appendSlice(parsed_line);
+                        }
+                    }
+                }
+
+                continue;
             }
         }
 
-        // while (lines_it.next()) |line| {
-        //     const maybe_chapter = parseChapter(line);
-        //     if (maybe_chapter) |chapter| {
-        //         if (
-        //             chapter == bible_reference.chapter or
-        //             (bible_reference.book == .Psalms and bible_reference.chapter == 151)
-        //         ) {
-        //             found_chapter = true;
-        //             break;
-        //         }
-        //     }
-        // }
-        //
-        // if (!found_chapter) {
-        //     return Error.ChapterNotFound;
-        // }
-        //
-        // var found_verse = false;
-        // while (lines_it.peek()) |line| : (_ = lines_it.next()) {
-        //     const maybe_chapter = parseChapter(line);
-        //     if (maybe_chapter) |chapter| {
-        //         if (chapter != bible_reference.chapter) {
-        //             break;
-        //         }
-        //     }
-        //     const maybe_verse_number = parseVerseNumber(line);
-        //     if (maybe_verse_number) |verse_number| {
-        //         if (verse_number == bible_reference.from_verse) {
-        //             const previous_line = lines_it.buffer[lines_it.index-4..lines_it.index];
-        //             if (mem.startsWith(u8, previous_line, "\\q")) {
-        //                 var i = previous_line[2] - '0';
-        //                 while (i > 0) : (i -= 1) {
-        //                     try verses.append('\t');
-        //                 }
-        //             }
-        //             found_verse = true;
-        //             break;
-        //         }
-        //     }
-        // }
-        //
-        // if (!found_verse) {
-        //     return Error.VerseNotFound;
-        // }
-        //
-        // while (lines_it.next()) |line| {
-        //     const maybe_chapter = parseChapter(line);
-        //     if (maybe_chapter) |chapter| {
-        //         if (chapter != bible_reference.chapter) {
-        //             break;
-        //         }
-        //     }
-        //
-        //     const maybe_verse_number = parseVerseNumber(line);
-        //     var maybe_verse_number_ss: ?[]const u8 = null;
-        //     if (maybe_verse_number) |verse_number| {
-        //         if (bible_reference.to_verse) |to_verse| {
-        //             if (verse_number > to_verse) {
-        //                 break;
-        //             }
-        //         } else {
-        //             if (verse_number != bible_reference.from_verse) {
-        //                 break;
-        //             }
-        //         }
-        //         maybe_verse_number_ss = try self.toSuperscript(verse_number);
-        //     }
-        //     if (mem.startsWith(u8, line, "\\s")) {
-        //         continue;
-        //     }
-        //
-        //     const parsed_line = try self.parseLine(line, &footnotes);
-        //     if (parsed_line.len == 0) {
-        //         continue;
-        //     }
-        //
-        //     if (verses.items.len > 0) {
-        //         const last_char = verses.getLast();
-        //         if (
-        //             ! (last_char == '\n' or last_char == ' ') and
-        //             ! (parsed_line[0] == '\n' or parsed_line[0] == ' ' or parsed_line[0] == '\t')
-        //         ) {
-        //             try verses.append(' ');
-        //         } else if (last_char == ' ' and last_char == parsed_line[0]) {
-        //             _ = verses.pop();
-        //         }
-        //     }
-        //
-        //     if (maybe_verse_number_ss) |verse_number_ss| {
-        //         try verses.appendSlice(verse_number_ss);
-        //     }
-        //     try verses.appendSlice(parsed_line);
-        // }
-        //
-        // if (verses.getLastOrNull()) |last_char| {
-        //     if (last_char == ' ') {
-        //         _ = verses.pop();
-        //     }
-        // }
-        //
-        // if (footnotes.items.len != 0) {
-        //     try verses.append('\n');
-        //     try verses.appendSlice(try footnotes.toOwnedSlice());
-        // }
+        while (passage.getLastOrNull()) |last_char| {
+            if (last_char == '\t' or last_char == '\n') {
+                _ = passage.pop();
+            } else {
+                break;
+            }
+        }
+
+        if (footnotes.items.len != 0) {
+            try passage.append('\n');
+            try passage.appendSlice(footnotes.items);
+        }
 
         return passage.toOwnedSlice();
     }
 
-    fn findChapter(self: WEBParser, chapter: u8, lines_it: *TokenIterator) bool {
-        for (lines_it.next()) |line| {
-            if (self.parseChapter(line)) |parsed_chapter| {
+    fn findChapter(chapter: u8, lines_it: *TokenIterator) bool {
+        while (lines_it.next()) |line| {
+            if (parseChapter(line)) |parsed_chapter| {
                 if (parsed_chapter == chapter) {
                     return true;
                 } else if (parsed_chapter > chapter) {
@@ -202,9 +221,9 @@ pub const WEBParser = struct {
         return false;
     }
 
-    fn findVerse(self: WEBParser, verse_number: u8, lines_it: *TokenIterator) bool {
+    fn findVerse(verse_number: u8, lines_it: *TokenIterator) bool {
         while (lines_it.peek()) |line| : (_ = lines_it.next()) {
-            if (self.parseVerseNumber(line)) |parsed_verse_number| {
+            if (parseVerseNumber(line)) |parsed_verse_number| {
                 if (parsed_verse_number == verse_number) {
                     return true;
                 } else if (parsed_verse_number > verse_number) {
@@ -219,7 +238,7 @@ pub const WEBParser = struct {
         var buffer: [16]u8 = undefined;
         const num = try fmt.bufPrint(&buffer, "{d}", .{number});
 
-        var ss_number = try std.ArrayList(u8).initCapacity(self.allocator, 16);
+        var ss_number = try std.ArrayList(u8).initCapacity(self.arena, 16);
         defer ss_number.deinit();
 
         for (num) |digit| {
@@ -264,11 +283,10 @@ pub const WEBParser = struct {
         return fmt.parseInt(u8, it.next().?, 10) catch unreachable;
     }
 
-    fn parseLine(self: WEBParser, line: []const u8, footnotes: *std.ArrayList(u8)) ![]const u8 {
+    fn parseLine(self: WEBParser, line: []const u8, footnotes: *std.ArrayList(u8), current_chapter_number: u8, should_print_chapter_number: bool) !?[]const u8 {
         var i: usize = 0;
-        var verse = try std.ArrayList(u8).initCapacity(self.allocator, 4 * 1024);
-        defer verse.deinit();
-        var previous_indentation_level: u8 = 1;
+        var parsed_line = try std.ArrayList(u8).initCapacity(self.arena, 4 * 1024);
+        defer parsed_line.deinit();
         while (i < line.len) {
             if (line[i] == '\\') {
                 if (line[i + 1] == '+') {
@@ -293,28 +311,44 @@ pub const WEBParser = struct {
                         const word_end_i = mem.indexOfScalarPos(u8, line, i, ' ').?;
                         const maybe_strong = mem.indexOfScalarPos(u8, line, i, '|');
                         if (maybe_strong) |strong_idx| {
-                            try verse.appendSlice(line[i..strong_idx]);
+                            try parsed_line.appendSlice(line[i..strong_idx]);
                             i = strong_idx + 15;
                         } else {
-                            try verse.appendSlice(line[i..word_end_i]);
+                            try parsed_line.appendSlice(line[i..word_end_i]);
                             i = word_end_i + 1;
                         }
                     },
                     'q' => {
                         var indentation_level = line[i + 2] - '0';
-                        try verse.append('\n');
+                        try parsed_line.append('\n');
                         while (indentation_level > 0) : (indentation_level -= 1) {
-                            try verse.append('\t');
+                            try parsed_line.append('\t');
                         }
-                        previous_indentation_level = indentation_level;
-                        i += 4;
+                        i = mem.indexOfScalarPos(u8, line, i + 2, ' ') orelse line.len;
                     },
                     'v' => {
                         i += 3;
+                        const start = i;
                         while (std.ascii.isDigit(line[i])) {
                             i += 1;
                         }
-                        i += 1;
+
+                        if (should_print_chapter_number) {
+                            const current_chapter_number_ss = try self.toSuperscript(current_chapter_number);
+                            defer self.arena.free(current_chapter_number_ss);
+
+                            try parsed_line.appendSlice(current_chapter_number_ss);
+                            try parsed_line.appendSlice("𐞁");
+                        }
+
+                        const verse_number = fmt.parseInt(u8, line[start..i], 10) catch unreachable;
+                        const verse_number_ss = try self.toSuperscript(verse_number);
+                        defer self.arena.free(verse_number_ss);
+
+                        try parsed_line.appendSlice(verse_number_ss);
+
+                        // skip whitespace
+                        i = mem.indexOfScalarPos(u8, line, i, ' ').? + 1;
                     },
                     'f' => {
                         const fr_begin = mem.indexOfScalarPos(u8, line, i, ':').? + 1;
@@ -325,25 +359,26 @@ pub const WEBParser = struct {
                         const ft_end = mem.indexOfPosLinear(u8, line, ft_begin, "\\f*").?;
                         const ft_raw = line[ft_begin..ft_end];
 
-                        var temp = try mem.replaceOwned(u8, self.allocator, ft_raw, "\\+wh ", "");
-                        defer self.allocator.free(temp);
-                        var temp2 = try mem.replaceOwned(u8, self.allocator, temp, "\\+wh*", "");
-                        defer self.allocator.free(temp2);
+                        var temp = try mem.replaceOwned(u8, self.arena, ft_raw, "\\+wh ", "");
+                        defer self.arena.free(temp);
+                        var temp2 = try mem.replaceOwned(u8, self.arena, temp, "\\+wh*", "");
+                        defer self.arena.free(temp2);
 
-                        self.allocator.free(temp);
-                        temp = try mem.replaceOwned(u8, self.allocator, temp2, "\\+bk ", "“");
-                        self.allocator.free(temp2);
-                        temp2 = try mem.replaceOwned(u8, self.allocator, temp, "\\+bk*", "”");
+                        self.arena.free(temp);
+                        temp = try mem.replaceOwned(u8, self.arena, temp2, "\\+bk ", "“");
+                        self.arena.free(temp2);
+                        temp2 = try mem.replaceOwned(u8, self.arena, temp, "\\+bk*", "”");
 
-                        self.allocator.free(temp);
-                        temp = try mem.replaceOwned(u8, self.allocator, temp2, "\\fqa ", "");
-                        self.allocator.free(temp2);
-                        temp2 = try mem.replaceOwned(u8, self.allocator, temp, "\\fl ", "");
+                        self.arena.free(temp);
+                        temp = try mem.replaceOwned(u8, self.arena, temp2, "\\fqa ", "");
+                        self.arena.free(temp2);
+                        temp2 = try mem.replaceOwned(u8, self.arena, temp, "\\fl ", "");
 
-                        self.allocator.free(temp);
-                        temp = try mem.replaceOwned(u8, self.allocator, temp2, "\\ft ", "");
+                        self.arena.free(temp);
+                        temp = try mem.replaceOwned(u8, self.arena, temp2, "\\ft ", "");
 
                         try footnotes.append('\n');
+                        try footnotes.appendSlice(try fmt.allocPrint(self.arena, "{d}:", .{current_chapter_number}));
                         try footnotes.appendSlice(verse_number);
                         try footnotes.appendSlice(": ");
                         try footnotes.appendSlice(mem.trimRight(u8, temp[0..], " "));
@@ -353,9 +388,9 @@ pub const WEBParser = struct {
                     'b' => {
                         if (line[i + 2] == 'k') {
                             if (line[i + 3] == '*') {
-                                try verse.appendSlice("”");
+                                try parsed_line.appendSlice("”");
                             } else {
-                                try verse.appendSlice("“");
+                                try parsed_line.appendSlice("“");
                             }
                         }
                         i += 4;
@@ -364,15 +399,15 @@ pub const WEBParser = struct {
                     'p' => {
                         if (i + 2 < line.len and line[i + 2] == 'i') {
                             // `\pi `
-                            try verse.append('\t');
+                            try parsed_line.append('\t');
                             i += 4;
                         } else {
-                            if (verse.getLastOrNull()) |last_char| {
+                            if (parsed_line.getLastOrNull()) |last_char| {
                                 if (last_char != ' ') {
-                                    try verse.append(' ');
+                                    try parsed_line.append(' ');
                                 }
                             } else {
-                                try verse.append(' ');
+                                try parsed_line.append(' ');
                             }
                             // `\p`
                             i += 3;
@@ -381,6 +416,10 @@ pub const WEBParser = struct {
                     'x' => {
                         // skip `\x...\x*`
                         i = mem.indexOfPos(u8, line, i, "\\x*").? + 3;
+                    },
+                    'm' => {
+                        i += line.len;
+                        break;
                     },
                     'd' => {
                         break;
@@ -398,23 +437,28 @@ pub const WEBParser = struct {
                     i += 1;
                     continue;
                 }
-                if (verse.getLastOrNull()) |last_char| {
+                if (parsed_line.getLastOrNull()) |last_char| {
                     if (last_char != ' ') {
-                        try verse.append(line[i]);
+                        try parsed_line.append(line[i]);
                     }
                 }
                 i += 1;
             } else {
-                try verse.append(line[i]);
+                try parsed_line.append(line[i]);
                 i += 1;
             }
         }
-        if (verse.getLastOrNull()) |last_char| {
+        if (parsed_line.getLastOrNull()) |last_char| {
             if (last_char == ' ') {
-                _ = verse.pop();
+                _ = parsed_line.pop();
             }
         }
-        return try verse.toOwnedSlice();
+
+        if (parsed_line.items.len == 0) {
+            return null;
+        }
+
+        return try parsed_line.toOwnedSlice();
     }
 };
 
