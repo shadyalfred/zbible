@@ -1,14 +1,25 @@
 Uses the [World English Bible](https://worldenglish.bible/). Thanks to [eBible.org](https://ebible.org/) for providing the WEB in USFM format.
 
-`zbible book_name chapter:verse[-to_verse]`
+# Usage
+
+## Whole chapter
+`zbible book_name chapter`
+## Consecutive verses from the same chapter
+`zbible book_name chapter:verse-to_verse`
+## Multiple verses from the same chapter
+`zbible book_name chapter:verse,verse,verse`
+## Multiple verses from different chapters
+`zbible book_name chapter:verse,chapter:verse,chapter:verse`
+## Consecutive verses from consecutive chapters
+`zbible book_name from_chapter:verse-to_chapter:verse`
+
+### N.B. `Psalm 151` is considered a different book from Psalms, do not mix them together.
 
 https://github.com/user-attachments/assets/26ef8b20-77d7-45d8-939d-e09baa90c95e
 
-
-
 # Installation
 ```sh
-zig build -Doptimize=ReleaseSafe
+zig build -Doptimize=ReleaseFast
 ```
 ```sh
 sudo mkdir /usr/share/zbible
