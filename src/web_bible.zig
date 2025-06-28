@@ -50,7 +50,7 @@ pub const WEBParser = struct {
 
         const web_usfm_file = try fs.openFileAbsolute(
             try fmt.allocPrint(self.arena, "/usr/share/zbible/eng-web-usfm/{s}", .{bible_file_name}),
-            .{ .mode = .read_only }
+            .{ .mode = .read_only },
         );
         defer web_usfm_file.close();
 
@@ -166,8 +166,8 @@ pub const WEBParser = struct {
                 }
 
                 continue;
-            // verse range in the same chapter
             } else {
+                // verse range in the same chapter
                 while (lines_it.next()) |line| {
                     defer _ = self.arena_impl.reset(.retain_capacity);
 
@@ -549,6 +549,6 @@ fn getBibleBookFileName(bible_book: BibleBook) ?[]const u8 {
         .SecondJohn => "93_2JNeng_web.usfm",
         .ThirdJohn => "94_3JNeng_web.usfm",
         .Jude => "95_JUDeng_web.usfm",
-        .Revelation => "96_REVeng_web.usfm"
+        .Revelation => "96_REVeng_web.usfm",
     };
 }

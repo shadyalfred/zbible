@@ -43,8 +43,8 @@ pub fn main() !void {
 
     const std_out = io.getStdOut().writer();
     if (passage.len > 0 and passage[passage.len - 1] == '\n') {
-        try std_out.print("{s}\n[{s}]\n", .{passage, bible_reference_str});
+        try std_out.print("{s}\n[{s}]\n", .{ passage, bible_reference_str });
     } else {
-        try std_out.print("{s}\n\n[{s}]\n", .{passage, bible_reference_str});
+        try std_out.print("{s}\n\n[{s}]\n", .{ passage, bible_reference_str });
     }
 }

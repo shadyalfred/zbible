@@ -6,7 +6,7 @@ pub const VerseRange = struct {
     from_chapter: u8,
     to_chapter: ?u8 = null,
     from_verse: ?u8 = null,
-    to_verse: ?u8 = null
+    to_verse: ?u8 = null,
 };
 
 pub const BibleReference = struct {
@@ -30,7 +30,7 @@ pub const BibleReference = struct {
             }
 
             if (verse_range.to_chapter) |to_chapter| {
-                try sb.appendSlice(try fmt.bufPrint(&buffer, "-{d}:{d}", .{to_chapter, verse_range.to_verse.?}));
+                try sb.appendSlice(try fmt.bufPrint(&buffer, "-{d}:{d}", .{ to_chapter, verse_range.to_verse.? }));
             } else if (verse_range.to_verse) |to_verse| {
                 try sb.appendSlice(try fmt.bufPrint(&buffer, "-{d}", .{to_verse}));
             }
@@ -222,7 +222,7 @@ pub const BibleBook = enum {
             .SecondJohn => "Second John",
             .ThirdJohn => "Third John",
             .Jude => "Jude",
-            .Revelation => "Revelation"
+            .Revelation => "Revelation",
         };
     }
 };
@@ -233,94 +233,94 @@ test "print bible references" {
     const log = std.log;
     const allocator = testing.allocator;
 
-    const bible_references = [_]BibleReference {
-        BibleReference {
+    const bible_references = [_]BibleReference{
+        BibleReference{
             .book = .Genesis,
             .verse_ranges = &[_]VerseRange{
-                VerseRange {
+                VerseRange{
                     .from_chapter = 1,
-                }
-            }
+                },
+            },
         },
-        BibleReference {
+        BibleReference{
             .book = .Genesis,
             .verse_ranges = &[_]VerseRange{
-                VerseRange {
+                VerseRange{
                     .from_chapter = 1,
                     .from_verse = 1,
-                }
-            }
+                },
+            },
         },
-        BibleReference {
+        BibleReference{
             .book = .Genesis,
             .verse_ranges = &[_]VerseRange{
-                VerseRange {
+                VerseRange{
                     .from_chapter = 1,
                     .from_verse = 1,
                     .to_verse = 2,
-                }
-            }
+                },
+            },
         },
-        BibleReference {
+        BibleReference{
             .book = .Genesis,
             .verse_ranges = &[_]VerseRange{
-                VerseRange {
+                VerseRange{
                     .from_chapter = 1,
                     .from_verse = 1,
                     .to_chapter = 2,
                     .to_verse = 1,
-                }
-            }
+                },
+            },
         },
-        BibleReference {
+        BibleReference{
             .book = .SecondEsdras,
             .verse_ranges = &[_]VerseRange{
-                VerseRange {
+                VerseRange{
                     .from_chapter = 1,
                 },
-                VerseRange {
+                VerseRange{
                     .from_chapter = 2,
                     .from_verse = 1,
                 },
-                VerseRange {
+                VerseRange{
                     .from_chapter = 2,
                     .from_verse = 3,
                     .to_verse = 5,
                 },
-                VerseRange {
+                VerseRange{
                     .from_chapter = 3,
                     .from_verse = 1,
                     .to_chapter = 4,
                     .to_verse = 1,
                 },
-            }
+            },
         },
-        BibleReference {
+        BibleReference{
             .book = .John,
             .verse_ranges = &[_]VerseRange{
-                VerseRange {
+                VerseRange{
                     .from_chapter = 3,
                 },
-                VerseRange {
+                VerseRange{
                     .from_chapter = 4,
                     .from_verse = 2,
                 },
-                VerseRange {
+                VerseRange{
                     .from_chapter = 5,
                     .from_verse = 10,
                     .to_verse = 12,
                 },
-                VerseRange {
+                VerseRange{
                     .from_chapter = 6,
                     .from_verse = 1,
                     .to_chapter = 7,
                     .to_verse = 15,
                 },
-            }
+            },
         },
     };
 
-    const expected_values = [_][]const u8 {
+    const expected_values = [_][]const u8{
         "Genesis 1",
         "Genesis 1:1",
         "Genesis 1:1-2",

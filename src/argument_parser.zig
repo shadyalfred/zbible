@@ -59,13 +59,7 @@ const VerseRangeParser = struct {
             }
         }
 
-
-        return VerseRange {
-            .from_chapter = from_chapter,
-            .from_verse = from_verse,
-            .to_chapter = to_chapter,
-            .to_verse = to_verse
-        };
+        return VerseRange{ .from_chapter = from_chapter, .from_verse = from_verse, .to_chapter = to_chapter, .to_verse = to_verse };
     }
 
     pub fn parseFirstRange(self: *VerseRangeParser) !VerseRange {
@@ -97,12 +91,7 @@ const VerseRangeParser = struct {
             to_verse = self.parseNumber() catch @panic("Missing ending verse");
         }
 
-        return VerseRange {
-            .from_chapter = from_chapter,
-            .from_verse = from_verse,
-            .to_chapter = to_chapter,
-            .to_verse = to_verse
-        };
+        return VerseRange{ .from_chapter = from_chapter, .from_verse = from_verse, .to_chapter = to_chapter, .to_verse = to_verse };
     }
 
     fn parseNumber(self: *VerseRangeParser) !u8 {
@@ -158,7 +147,7 @@ pub const ArgumentParser = struct {
 
         var verse_range_it = mem.tokenizeScalar(u8, self.argument[self.i..], ',');
 
-        var verse_range_parser = VerseRangeParser {
+        var verse_range_parser = VerseRangeParser{
             .buffer = verse_range_it.next().?,
         };
 
@@ -175,12 +164,8 @@ pub const ArgumentParser = struct {
             previous_chapter = verse_ranges.getLast().from_chapter;
         }
 
-        return BibleReference {
-            .book = book,
-            .verse_ranges = try verse_ranges.toOwnedSlice()
-        };
+        return BibleReference{ .book = book, .verse_ranges = try verse_ranges.toOwnedSlice() };
     }
-
 
     fn parseVerse(self: *ArgumentParser) !u8 {
         if (self.i >= self.argument.len) {
@@ -591,7 +576,7 @@ fn expandAbbreviation(abbreviation: []const u8) ?[]const u8 {
         .{ "rv", "revelation of john" },
         .{ "rev", "revelation of john" },
         .{ "revelation", "revelation of john" },
-        .{ "revelation to john", "revelation of john" }
+        .{ "revelation to john", "revelation of john" },
     });
 
     return abbreviations.get(abbreviation);
@@ -708,27 +693,27 @@ test "parse" {
             .verse_ranges = &[_]VerseRange{
                 VerseRange{
                     .from_chapter = 2,
-                    .from_verse = 3
-                }
-            }
+                    .from_verse = 3,
+                },
+            },
         },
         BibleReference{
             .book = .Genesis,
             .verse_ranges = &[_]VerseRange{
                 VerseRange{
                     .from_chapter = 1,
-                    .from_verse = 1
-                }
-            }
+                    .from_verse = 1,
+                },
+            },
         },
         BibleReference{
             .book = .John,
             .verse_ranges = &[_]VerseRange{
                 VerseRange{
                     .from_chapter = 1,
-                    .from_verse = 1
-                }
-            }
+                    .from_verse = 1,
+                },
+            },
         },
         BibleReference{
             .book = .Exodus,
@@ -736,8 +721,8 @@ test "parse" {
                 VerseRange{
                     .from_chapter = 10,
                     .from_verse = 11,
-                }
-            }
+                },
+            },
         },
         BibleReference{
             .book = .Psalms,
@@ -745,8 +730,8 @@ test "parse" {
                 VerseRange{
                     .from_chapter = 1,
                     .from_verse = 1,
-                }
-            }
+                },
+            },
         },
         BibleReference{
             .book = .Psalms,
@@ -754,8 +739,8 @@ test "parse" {
                 VerseRange{
                     .from_chapter = 110,
                     .from_verse = 5,
-                }
-            }
+                },
+            },
         },
         BibleReference{
             .book = .Psalms,
@@ -778,7 +763,7 @@ test "parse" {
                     .from_verse = 5,
                     .to_verse = 7,
                 },
-            }
+            },
         },
         BibleReference{
             .book = .Psalms,
@@ -802,7 +787,7 @@ test "parse" {
                     .from_verse = 5,
                     .to_verse = 7,
                 },
-            }
+            },
         },
         BibleReference{
             .book = .FirstThessalonians,
@@ -819,7 +804,7 @@ test "parse" {
                     .to_chapter = 3,
                     .to_verse = 1,
                 },
-            }
+            },
         },
     };
 
