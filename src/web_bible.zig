@@ -313,7 +313,7 @@ pub const WEBParser = struct {
     }
 
     fn parseChapter(line: []const u8) ?u8 {
-        if (!mem.startsWith(u8, line, "\\c ")) {
+        if (!mem.startsWith(u8, line, "\\c")) {
             return null;
         }
 
