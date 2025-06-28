@@ -88,6 +88,8 @@ pub const WEBParser = struct {
                     return Error.VerseNotFound;
                 }
 
+                // N.B. must check previous line after locating the verse,
+                // because sometimes it is perceded by an indentation.
                 // TODO refactor into its own function to parse \q1
                 if (try self.parseLine(
                     lines_it.peekBackwards().?,
@@ -143,11 +145,19 @@ pub const WEBParser = struct {
                         current_chapter_number,
                         &should_print_chapter_number,
                     )) |parsed_line| {
-                        if (passage.items.len == 0 and parsed_line[0] == '\n') {
-                            try passage.appendSlice(parsed_line[1..]);
-                        } else {
-                            try passage.appendSlice(parsed_line);
+                        // Has to do this because there is no given first verse to locate
+                        if (passage.items.len == 0) {
+                            if (parsed_line[0] == '\n') {
+                                try passage.appendSlice(parsed_line[1..]);
+                                continue;
+                            }
+                        } else if (passage.getLastOrNull()) |last_char| {
+                            if (last_char != '\n' and !(parsed_line[0] == '\t' or parsed_line[0] == '\n')) {
+                                try passage.append(' ');
+                            }
                         }
+
+                        try passage.appendSlice(parsed_line);
                     }
                 }
 
@@ -181,11 +191,13 @@ pub const WEBParser = struct {
                         current_chapter_number,
                         &should_print_chapter_number,
                     )) |parsed_line| {
-                        if (passage.items.len == 0 and parsed_line[0] == '\n') {
-                            try passage.appendSlice(parsed_line[1..]);
-                        } else {
-                            try passage.appendSlice(parsed_line);
+                        if (passage.getLastOrNull()) |last_char| {
+                            if (last_char != '\n' and !(parsed_line[0] == '\t' or parsed_line[0] == '\n')) {
+                                try passage.append(' ');
+                            }
                         }
+
+                        try passage.appendSlice(parsed_line);
                     }
                 }
 
@@ -209,11 +221,13 @@ pub const WEBParser = struct {
                         current_chapter_number,
                         &should_print_chapter_number,
                     )) |parsed_line| {
-                        if (passage.items.len == 0 and parsed_line[0] == '\n') {
-                            try passage.appendSlice(parsed_line[1..]);
-                        } else {
-                            try passage.appendSlice(parsed_line);
+                        if (passage.getLastOrNull()) |last_char| {
+                            if (last_char != '\n' and !(parsed_line[0] == '\t' or parsed_line[0] == '\n')) {
+                                try passage.append(' ');
+                            }
                         }
+
+                        try passage.appendSlice(parsed_line);
                     }
                 }
 
@@ -364,7 +378,7 @@ pub const WEBParser = struct {
                     'q' => {
                         var indentation_level = line[i + 2] - '0';
                         try parsed_line.append('\n');
-                        while (indentation_level > 0) : (indentation_level -= 1) {
+                        while (indentation_level > 1) : (indentation_level -= 1) {
                             try parsed_line.append('\t');
                         }
                         i = mem.indexOfScalarPos(u8, line, i + 2, ' ') orelse line.len;
@@ -372,7 +386,7 @@ pub const WEBParser = struct {
                     'v' => {
                         i += 3;
                         const start = i;
-                        while (std.ascii.isDigit(line[i])) {
+                        while (ascii.isDigit(line[i])) {
                             i += 1;
                         }
 
@@ -446,21 +460,17 @@ pub const WEBParser = struct {
                         continue;
                     },
                     'p' => {
-                        if (i + 2 < line.len and line[i + 2] == 'i') {
-                            // `\pi `
-                            try parsed_line.append('\t');
-                            i += 4;
-                        } else {
-                            if (parsed_line.getLastOrNull()) |last_char| {
-                                if (last_char != ' ') {
-                                    try parsed_line.append(' ');
-                                }
-                            } else {
-                                try parsed_line.append(' ');
+                        try parsed_line.append('\n');
+
+                        if (i + 2 < line.len and ascii.isDigit(line[i + 2])) {
+                            var p_i: u8 = line[i + 2] - '0';
+                            while (p_i > 1) : (p_i -= 1) {
+                                try parsed_line.append('\t');
                             }
-                            // `\p`
-                            i += 3;
                         }
+
+                        i = mem.indexOfScalarPos(u8, line, i, ' ') orelse line.len;
+                        i += 1;
                     },
                     'x' => {
                         // skip `\x...\x*`
@@ -482,8 +492,8 @@ pub const WEBParser = struct {
                     },
                 }
             } else if (line[i] == ' ') {
-                if (i == line.len - 1 or line[i] == line[i + 1]) {
-                    i += 1;
+                if (i + 1 < line.len and line[i] == line[i + 1]) {
+                    i += 2;
                     continue;
                 }
                 if (parsed_line.getLastOrNull()) |last_char| {
@@ -497,9 +507,12 @@ pub const WEBParser = struct {
                 i += 1;
             }
         }
-        if (parsed_line.getLastOrNull()) |last_char| {
+
+        while (parsed_line.getLastOrNull()) |last_char| {
             if (last_char == ' ') {
                 _ = parsed_line.pop();
+            } else {
+                break;
             }
         }
 
