@@ -7,9 +7,8 @@ const mem = std.mem;
 const ascii = std.ascii;
 const fs = std.fs;
 
-const BibleReference = @import("bible_reference.zig").BibleReference;
 const BibleBook = @import("bible_reference.zig").BibleBook;
-
+const BibleReference = @import("bible_reference.zig").BibleReference;
 const TokenIterator = @import("token_iterator.zig").TokenIterator;
 
 const Error = error{
@@ -22,6 +21,7 @@ pub const WEBParser = struct {
     gpa: mem.Allocator,
     arena_impl: *heap.ArenaAllocator,
     arena: mem.Allocator,
+    has_multiple_chapters: bool = false,
 
     pub fn init(gpa: mem.Allocator, arena_impl: *heap.ArenaAllocator) WEBParser {
         return WEBParser{
@@ -31,7 +31,9 @@ pub const WEBParser = struct {
         };
     }
 
-    pub fn getBibleVerses(self: WEBParser, bible_reference: BibleReference) ![]const u8 {
+    pub fn getBibleVerses(self: *WEBParser, bible_reference: BibleReference) ![]const u8 {
+        self.has_multiple_chapters = hasMultipleChapters(bible_reference);
+
         defer _ = self.arena_impl.reset(.free_all);
 
         const maybe_bible_file_name = getBibleBookFileName(bible_reference.book);
@@ -64,6 +66,18 @@ pub const WEBParser = struct {
 
         for (bible_reference.verse_ranges) |verse_range| {
             _ = self.arena_impl.reset(.retain_capacity);
+            defer lines_it.reset();
+
+            defer while (passage.getLastOrNull()) |last_char| {
+                if (last_char == '\t' or last_char == '\n') {
+                    _ = passage.pop();
+                } else {
+                    break;
+                }
+            };
+
+            var current_chapter_number = verse_range.from_chapter;
+            var should_print_chapter_number = self.has_multiple_chapters;
 
             if (!findChapter(verse_range.from_chapter, &lines_it)) {
                 return Error.ChapterNotFound;
@@ -75,8 +89,13 @@ pub const WEBParser = struct {
                 }
 
                 // TODO refactor into its own function to parse \q1
-                if (try self.parseLine(lines_it.peekBackwards().?, &footnotes, verse_range.from_chapter, false)) |parsed_line| {
-                    if (parsed_line[0] == '\n') {
+                if (try self.parseLine(
+                    lines_it.peekBackwards().?,
+                    &footnotes,
+                    current_chapter_number,
+                    &should_print_chapter_number,
+                )) |parsed_line| {
+                    if (passage.items.len == 0 and parsed_line[0] == '\n') {
                         try passage.appendSlice(parsed_line[1..]);
                     } else {
                         try passage.appendSlice(parsed_line);
@@ -96,7 +115,12 @@ pub const WEBParser = struct {
                             }
                         }
 
-                        if (try self.parseLine(line, &footnotes, verse_range.from_chapter, false)) |parsed_line| {
+                        if (try self.parseLine(
+                            line,
+                            &footnotes,
+                            current_chapter_number,
+                            &should_print_chapter_number,
+                        )) |parsed_line| {
                             try passage.appendSlice(parsed_line);
                             _ = self.arena_impl.reset(.retain_capacity);
                         }
@@ -113,7 +137,12 @@ pub const WEBParser = struct {
                         break;
                     }
 
-                    if (try self.parseLine(line, &footnotes, verse_range.from_chapter, false)) |parsed_line| {
+                    if (try self.parseLine(
+                        line,
+                        &footnotes,
+                        current_chapter_number,
+                        &should_print_chapter_number,
+                    )) |parsed_line| {
                         if (passage.items.len == 0 and parsed_line[0] == '\n') {
                             try passage.appendSlice(parsed_line[1..]);
                         } else {
@@ -127,10 +156,6 @@ pub const WEBParser = struct {
 
             // chapter range
             if (verse_range.to_chapter) |to_chapter| {
-                var current_chapter_number = verse_range.from_chapter;
-                var should_print_chapter_number = true;
-                var should_reset = false;
-
                 while (lines_it.next()) |line| {
                     defer _ = self.arena_impl.reset(.retain_capacity);
 
@@ -143,25 +168,24 @@ pub const WEBParser = struct {
                         should_print_chapter_number = true;
                         continue;
                     } else if (parseVerseNumber(line)) |current_verse_number| {
-                        if (current_chapter_number == to_chapter and current_verse_number > verse_range.to_verse.?) {
+                        if (current_chapter_number == to_chapter and
+                            current_verse_number > verse_range.to_verse.?)
+                        {
                             break;
-                        }
-                        if (should_print_chapter_number) {
-                            should_reset = true;
                         }
                     }
 
-                    if (try self.parseLine(line, &footnotes, current_chapter_number, should_print_chapter_number)) |parsed_line| {
+                    if (try self.parseLine(
+                        line,
+                        &footnotes,
+                        current_chapter_number,
+                        &should_print_chapter_number,
+                    )) |parsed_line| {
                         if (passage.items.len == 0 and parsed_line[0] == '\n') {
                             try passage.appendSlice(parsed_line[1..]);
                         } else {
                             try passage.appendSlice(parsed_line);
                         }
-                    }
-
-                    if (should_reset) {
-                        should_print_chapter_number = false;
-                        should_reset = false;
                     }
                 }
 
@@ -179,7 +203,12 @@ pub const WEBParser = struct {
                         }
                     }
 
-                    if (try self.parseLine(line, &footnotes, verse_range.from_chapter, false)) |parsed_line| {
+                    if (try self.parseLine(
+                        line,
+                        &footnotes,
+                        current_chapter_number,
+                        &should_print_chapter_number,
+                    )) |parsed_line| {
                         if (passage.items.len == 0 and parsed_line[0] == '\n') {
                             try passage.appendSlice(parsed_line[1..]);
                         } else {
@@ -192,20 +221,28 @@ pub const WEBParser = struct {
             }
         }
 
-        while (passage.getLastOrNull()) |last_char| {
-            if (last_char == '\t' or last_char == '\n') {
-                _ = passage.pop();
-            } else {
-                break;
-            }
-        }
-
         if (footnotes.items.len != 0) {
             try passage.append('\n');
             try passage.appendSlice(footnotes.items);
         }
 
         return passage.toOwnedSlice();
+    }
+
+    fn hasMultipleChapters(bible_reference: BibleReference) bool {
+        const first_chapter = bible_reference.verse_ranges[0].from_chapter;
+
+        for (bible_reference.verse_ranges) |verse_range| {
+            if (verse_range.from_chapter != first_chapter) {
+                return true;
+            }
+
+            if (verse_range.to_chapter) |_| {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     fn findChapter(chapter: u8, lines_it: *TokenIterator) bool {
@@ -283,7 +320,13 @@ pub const WEBParser = struct {
         return fmt.parseInt(u8, it.next().?, 10) catch unreachable;
     }
 
-    fn parseLine(self: WEBParser, line: []const u8, footnotes: *std.ArrayList(u8), current_chapter_number: u8, should_print_chapter_number: bool) !?[]const u8 {
+    fn parseLine(
+        self: WEBParser,
+        line: []const u8,
+        footnotes: *std.ArrayList(u8),
+        current_chapter_number: u8,
+        should_print_chapter_number: *bool,
+    ) !?[]const u8 {
         var i: usize = 0;
         var parsed_line = try std.ArrayList(u8).initCapacity(self.arena, 4 * 1024);
         defer parsed_line.deinit();
@@ -333,12 +376,14 @@ pub const WEBParser = struct {
                             i += 1;
                         }
 
-                        if (should_print_chapter_number) {
+                        if (should_print_chapter_number.*) {
                             const current_chapter_number_ss = try self.toSuperscript(current_chapter_number);
                             defer self.arena.free(current_chapter_number_ss);
 
                             try parsed_line.appendSlice(current_chapter_number_ss);
                             try parsed_line.appendSlice("𐞁");
+
+                            should_print_chapter_number.* = false;
                         }
 
                         const verse_number = fmt.parseInt(u8, line[start..i], 10) catch unreachable;
@@ -378,7 +423,11 @@ pub const WEBParser = struct {
                         temp = try mem.replaceOwned(u8, self.arena, temp2, "\\ft ", "");
 
                         try footnotes.append('\n');
-                        try footnotes.appendSlice(try fmt.allocPrint(self.arena, "{d}:", .{current_chapter_number}));
+                        if (self.has_multiple_chapters) {
+                            try footnotes.appendSlice(
+                                try fmt.allocPrint(self.arena, "{d}:", .{current_chapter_number}),
+                            );
+                        }
                         try footnotes.appendSlice(verse_number);
                         try footnotes.appendSlice(": ");
                         try footnotes.appendSlice(mem.trimRight(u8, temp[0..], " "));

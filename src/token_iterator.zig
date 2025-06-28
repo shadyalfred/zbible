@@ -32,6 +32,11 @@ pub const TokenIterator = struct {
         }
     }
 
+    pub fn reset(self: *TokenIterator) void {
+        self.index = 0;
+        self.previous_index = null;
+    }
+
     fn isDelimiter(self: TokenIterator, i: usize) bool {
         return self.buffer[i] == self.delimiter;
     }
