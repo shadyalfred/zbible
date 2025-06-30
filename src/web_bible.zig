@@ -339,6 +339,25 @@ pub const WEBParser = struct {
         return fmt.parseInt(u8, it.next().?, 10) catch unreachable;
     }
 
+    fn cleanUpWord(word: []const u8) []const u8 {
+        if (mem.indexOfScalar(u8, word, '|')) |r| {
+            return word[0..r];
+        }
+
+        var r = word.len - 1;
+        while (!ascii.isAlphabetic(word[r])) {
+            r -= 1;
+        }
+
+        if (r == word.len - 1) {
+            return word;
+        }
+
+        r += 1;
+
+        return word[0..r];
+    }
+
     fn parseLine(
         self: WEBParser,
         line: []const u8,
@@ -409,6 +428,12 @@ pub const WEBParser = struct {
                         i = mem.indexOfScalarPos(u8, line, i, ' ').? + 1;
                     },
                     'f' => {
+                        var maybe_word: ?[]const u8 = null;
+
+                        if (line[i - 1] != ' ') {
+                            maybe_word = cleanUpWord(line[(mem.lastIndexOfScalar(u8, line[0..i], ' ').? + 1)..i]);
+                        }
+
                         const fr_begin = mem.indexOfScalarPos(u8, line, i, ':').? + 1;
                         const fr_end = mem.indexOfScalarPos(u8, line, fr_begin, ' ').?;
                         const verse_number = line[fr_begin..fr_end];
@@ -418,22 +443,12 @@ pub const WEBParser = struct {
                         const ft_raw = line[ft_begin..ft_end];
 
                         var temp = try mem.replaceOwned(u8, self.arena, ft_raw, "\\+wh ", "");
-                        defer self.arena.free(temp);
-                        var temp2 = try mem.replaceOwned(u8, self.arena, temp, "\\+wh*", "");
-                        defer self.arena.free(temp2);
-
-                        self.arena.free(temp);
-                        temp = try mem.replaceOwned(u8, self.arena, temp2, "\\+bk ", "“");
-                        self.arena.free(temp2);
-                        temp2 = try mem.replaceOwned(u8, self.arena, temp, "\\+bk*", "”");
-
-                        self.arena.free(temp);
-                        temp = try mem.replaceOwned(u8, self.arena, temp2, "\\fqa ", "");
-                        self.arena.free(temp2);
-                        temp2 = try mem.replaceOwned(u8, self.arena, temp, "\\fl ", "");
-
-                        self.arena.free(temp);
-                        temp = try mem.replaceOwned(u8, self.arena, temp2, "\\ft ", "");
+                        temp = try mem.replaceOwned(u8, self.arena, temp, "\\+wh*", "");
+                        temp = try mem.replaceOwned(u8, self.arena, temp, "\\+bk ", "“");
+                        temp = try mem.replaceOwned(u8, self.arena, temp, "\\+bk*", "”");
+                        temp = try mem.replaceOwned(u8, self.arena, temp, "\\fqa ", "");
+                        temp = try mem.replaceOwned(u8, self.arena, temp, "\\fl ", "");
+                        temp = try mem.replaceOwned(u8, self.arena, temp, "\\ft ", "");
 
                         try footnotes.append('\n');
                         if (self.has_multiple_chapters) {
@@ -443,6 +458,9 @@ pub const WEBParser = struct {
                         }
                         try footnotes.appendSlice(verse_number);
                         try footnotes.appendSlice(": ");
+                        if (maybe_word) |word| {
+                            try footnotes.appendSlice(try fmt.allocPrint(self.arena, "({s}) ", .{word}));
+                        }
                         try footnotes.appendSlice(mem.trimRight(u8, temp[0..], " "));
 
                         i = ft_end + 3;
