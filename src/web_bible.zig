@@ -91,51 +91,54 @@ pub const WEBParser = struct {
                 // N.B. must check previous line after locating the verse,
                 // because sometimes it is perceded by an indentation.
                 // TODO refactor into its own function to parse \q1
-                if (
-                    try self.parseLine(
-                        lines_it.peekBackwards().?,
-                        &footnotes,
-                        current_chapter_number,
-                        &should_print_chapter_number,
-                    )
-                ) |parsed_line| {
-                    if (passage.items.len == 0 and parsed_line[0] == '\n') {
-                        try passage.appendSlice(parsed_line[1..]);
-                    } else {
-                        try passage.appendSlice(parsed_line);
-                    }
-                }
-
-                // single verse
-                if (verse_range.to_verse == null) {
-                    while (lines_it.next()) |line| {
-                        if (parseChapter(line)) |_| {
-                            break;
-                        }
-
-                        if (parseVerseNumber(line)) |current_verse_number| {
-                            if (current_verse_number != from_verse) {
-                                break;
-                            }
-                        }
-
+                if (lines_it.peekBackwards()) |previous_line| {
+                    if (mem.startsWith(u8, previous_line, "\\q")) {
                         if (
                             try self.parseLine(
-                                line,
+                                previous_line,
                                 &footnotes,
                                 current_chapter_number,
                                 &should_print_chapter_number,
                             )
                         ) |parsed_line| {
-                            try passage.appendSlice(parsed_line);
-                            _ = self.arena_impl.reset(.retain_capacity);
+                            if (passage.items.len == 0 and parsed_line[0] == '\n') {
+                                try passage.appendSlice(parsed_line[1..]);
+                            } else {
+                                try passage.appendSlice(parsed_line);
+                            }
+                        }
+                    }
+                }
+            }
+
+
+            // single verse
+            if (verse_range.from_verse != null and verse_range.to_chapter == null and verse_range.to_verse == null) {
+                const from_verse = verse_range.from_verse.?;
+                while (lines_it.next()) |line| {
+                    if (parseChapter(line)) |_| {
+                        break;
+                    }
+
+                    if (parseVerseNumber(line)) |current_verse_number| {
+                        if (current_verse_number != from_verse) {
+                            break;
                         }
                     }
 
-                    continue;
+                    if (
+                        try self.parseLine(
+                            line,
+                            &footnotes,
+                            current_chapter_number,
+                            &should_print_chapter_number,
+                        )
+                    ) |parsed_line| {
+                        try passage.appendSlice(parsed_line);
+                        _ = self.arena_impl.reset(.retain_capacity);
+                    }
                 }
-            } else {
-                // a whole chapter
+            } else if (verse_range.from_verse == null) { // a whole chapter
                 while (lines_it.next()) |line| {
                     defer _ = self.arena_impl.reset(.retain_capacity);
 
@@ -166,12 +169,7 @@ pub const WEBParser = struct {
                         try passage.appendSlice(parsed_line);
                     }
                 }
-
-                continue;
-            }
-
-            // chapter range
-            if (verse_range.to_chapter) |to_chapter| {
+            } else if (verse_range.to_chapter) |to_chapter| { // chapter range
                 while (lines_it.next()) |line| {
                     defer _ = self.arena_impl.reset(.retain_capacity);
 
@@ -208,10 +206,7 @@ pub const WEBParser = struct {
                         try passage.appendSlice(parsed_line);
                     }
                 }
-
-                continue;
-            } else {
-                // verse range in the same chapter
+            } else { // verse range in the same chapter
                 while (lines_it.next()) |line| {
                     defer _ = self.arena_impl.reset(.retain_capacity);
 
@@ -240,8 +235,6 @@ pub const WEBParser = struct {
                         try passage.appendSlice(parsed_line);
                     }
                 }
-
-                continue;
             }
         }
 
