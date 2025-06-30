@@ -68,20 +68,18 @@ pub const WEBParser = struct {
             _ = self.arena_impl.reset(.retain_capacity);
             defer lines_it.reset();
 
-            defer while (passage.getLastOrNull()) |last_char| {
-                if (last_char == '\t' or last_char == '\n') {
-                    _ = passage.pop();
-                } else {
-                    break;
-                }
-            };
-
             var current_chapter_number = verse_range.from_chapter;
             var should_print_chapter_number = self.has_multiple_chapters;
 
             if (!findChapter(verse_range.from_chapter, &lines_it)) {
                 return Error.ChapterNotFound;
             }
+
+            defer if (passage.getLastOrNull()) |last_char| {
+                if (!(last_char == '\n' or last_char == ' ' or last_char == '\t')) {
+                    passage.append(' ') catch unreachable;
+                }
+            };
 
             if (verse_range.from_verse) |from_verse| {
                 if (!findVerse(from_verse, &lines_it)) {
@@ -237,6 +235,15 @@ pub const WEBParser = struct {
                 }
             }
         }
+
+        while (passage.getLastOrNull()) |last_char| {
+            if (last_char == '\t' or last_char == '\n' or last_char == ' ') {
+                _ = passage.pop();
+            } else {
+                break;
+            }
+        }
+
 
         if (footnotes.items.len != 0) {
             try passage.append('\n');
