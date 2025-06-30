@@ -91,12 +91,14 @@ pub const WEBParser = struct {
                 // N.B. must check previous line after locating the verse,
                 // because sometimes it is perceded by an indentation.
                 // TODO refactor into its own function to parse \q1
-                if (try self.parseLine(
-                    lines_it.peekBackwards().?,
-                    &footnotes,
-                    current_chapter_number,
-                    &should_print_chapter_number,
-                )) |parsed_line| {
+                if (
+                    try self.parseLine(
+                        lines_it.peekBackwards().?,
+                        &footnotes,
+                        current_chapter_number,
+                        &should_print_chapter_number,
+                    )
+                ) |parsed_line| {
                     if (passage.items.len == 0 and parsed_line[0] == '\n') {
                         try passage.appendSlice(parsed_line[1..]);
                     } else {
@@ -117,12 +119,14 @@ pub const WEBParser = struct {
                             }
                         }
 
-                        if (try self.parseLine(
-                            line,
-                            &footnotes,
-                            current_chapter_number,
-                            &should_print_chapter_number,
-                        )) |parsed_line| {
+                        if (
+                            try self.parseLine(
+                                line,
+                                &footnotes,
+                                current_chapter_number,
+                                &should_print_chapter_number,
+                            )
+                        ) |parsed_line| {
                             try passage.appendSlice(parsed_line);
                             _ = self.arena_impl.reset(.retain_capacity);
                         }
@@ -139,12 +143,14 @@ pub const WEBParser = struct {
                         break;
                     }
 
-                    if (try self.parseLine(
-                        line,
-                        &footnotes,
-                        current_chapter_number,
-                        &should_print_chapter_number,
-                    )) |parsed_line| {
+                    if (
+                        try self.parseLine(
+                            line,
+                            &footnotes,
+                            current_chapter_number,
+                            &should_print_chapter_number,
+                        )
+                    ) |parsed_line| {
                         // Has to do this because there is no given first verse to locate
                         if (passage.items.len == 0) {
                             if (parsed_line[0] == '\n') {
@@ -185,12 +191,14 @@ pub const WEBParser = struct {
                         }
                     }
 
-                    if (try self.parseLine(
-                        line,
-                        &footnotes,
-                        current_chapter_number,
-                        &should_print_chapter_number,
-                    )) |parsed_line| {
+                    if (
+                        try self.parseLine(
+                            line,
+                            &footnotes,
+                            current_chapter_number,
+                            &should_print_chapter_number,
+                        )
+                    ) |parsed_line| {
                         if (passage.getLastOrNull()) |last_char| {
                             if (last_char != '\n' and !(parsed_line[0] == '\t' or parsed_line[0] == '\n')) {
                                 try passage.append(' ');
@@ -215,12 +223,14 @@ pub const WEBParser = struct {
                         }
                     }
 
-                    if (try self.parseLine(
-                        line,
-                        &footnotes,
-                        current_chapter_number,
-                        &should_print_chapter_number,
-                    )) |parsed_line| {
+                    if (
+                        try self.parseLine(
+                            line,
+                            &footnotes,
+                            current_chapter_number,
+                            &should_print_chapter_number,
+                        )
+                    ) |parsed_line| {
                         if (passage.getLastOrNull()) |last_char| {
                             if (last_char != '\n' and !(parsed_line[0] == '\t' or parsed_line[0] == '\n')) {
                                 try passage.append(' ');
