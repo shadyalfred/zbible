@@ -323,7 +323,9 @@ pub const WEBParser = struct {
     }
 
     fn parseChapter(line: []const u8) ?u8 {
-        if (!mem.startsWith(u8, line, "\\c")) {
+        if (
+            ! (mem.startsWith(u8, line, "\\c ") or mem.startsWith(u8, line, "\\cp"))
+        ) {
             return null;
         }
 
@@ -361,29 +363,23 @@ pub const WEBParser = struct {
                 }
                 switch (line[i + 1]) {
                     'w' => {
-                        // skip `\wj`
-                        if (line[i + 2] == 'j') {
-                            i += 4;
-                            continue;
-                        }
-
                         // skip `\w `
-                        i += 3;
+                        i = mem.indexOfScalarPos(u8, line, i, ' ').? + 1;
 
                         if (line[i - 1] == '*') {
                             // skip `\w*`
                             continue;
                         }
 
-                        const word_end_i = mem.indexOfScalarPos(u8, line, i, ' ').?;
+                        const word_end_i = mem.indexOfScalarPos(u8, line, i, '\\').?;
                         const maybe_strong = mem.indexOfScalarPos(u8, line, i, '|');
                         if (maybe_strong) |strong_idx| {
                             try parsed_line.appendSlice(line[i..strong_idx]);
-                            i = strong_idx + 15;
                         } else {
                             try parsed_line.appendSlice(line[i..word_end_i]);
-                            i = word_end_i + 1;
                         }
+
+                        i = mem.indexOfScalarPos(u8, line, i, '*').? + 1;
                     },
                     'q' => {
                         var indentation_level = line[i + 2] - '0';
@@ -391,7 +387,7 @@ pub const WEBParser = struct {
                         while (indentation_level > 1) : (indentation_level -= 1) {
                             try parsed_line.append('\t');
                         }
-                        i = mem.indexOfScalarPos(u8, line, i + 2, ' ') orelse line.len;
+                        i += 4;
                     },
                     'v' => {
                         i += 3;
@@ -484,7 +480,10 @@ pub const WEBParser = struct {
                     },
                     'x' => {
                         // skip `\x...\x*`
-                        i = mem.indexOfPos(u8, line, i, "\\x*").? + 3;
+                        i = mem.indexOfScalarPos(u8, line, i, '*').? + 1;
+                        if (line[i] == ' ') {
+                            i += 1;
+                        }
                     },
                     'm' => {
                         i += line.len;
@@ -503,14 +502,16 @@ pub const WEBParser = struct {
                 }
             } else if (line[i] == ' ') {
                 if (i + 1 < line.len and line[i] == line[i + 1]) {
-                    i += 2;
+                    i += 3;
                     continue;
                 }
+
                 if (parsed_line.getLastOrNull()) |last_char| {
                     if (last_char != ' ') {
                         try parsed_line.append(line[i]);
                     }
                 }
+
                 i += 1;
             } else {
                 try parsed_line.append(line[i]);
