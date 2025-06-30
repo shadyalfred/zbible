@@ -375,13 +375,23 @@ pub const WEBParser = struct {
                 }
                 switch (line[i + 1]) {
                     'w' => {
-                        // skip `\w `
-                        i = mem.indexOfScalarPos(u8, line, i, ' ').? + 1;
+                        // skip `\wj`
+                        if (line[i + 2] == 'j') {
+                            i += 4;
+                            continue;
+                        }
+
+                        i = mem.indexOfScalarPos(u8, line, i, ' ').?;
 
                         if (line[i - 1] == '*') {
                             // skip `\w*`
+                            i += 1;
                             continue;
                         }
+
+                        // skip the whitespace char in `\w `
+                        //                                ^
+                        i += 1;
 
                         const word_end_i = mem.indexOfScalarPos(u8, line, i, '\\').?;
                         const maybe_strong = mem.indexOfScalarPos(u8, line, i, '|');
