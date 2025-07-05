@@ -33,7 +33,7 @@ pub fn main() !void {
 
     var web_bible = WEBParser.init(gpa, &arena_impl);
 
-    const passage = try web_bible.getBibleVerses(bible_reference);
+    const passage = try web_bible.getBiblePassage(bible_reference);
     defer gpa.free(passage);
 
     _ = arena_impl.reset(.retain_capacity);

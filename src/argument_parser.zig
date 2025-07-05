@@ -20,6 +20,7 @@ const VerseRangeParser = struct {
     buffer: []const u8,
     i: usize = 0,
     previous_chapter: u8 = 0,
+    was_previous_range_all_chapters: bool = false,
 
     pub fn parse(self: *VerseRangeParser) !VerseRange {
         self.eatWhitespaces();
@@ -28,6 +29,8 @@ const VerseRangeParser = struct {
         var from_verse: ?u8 = null;
         var to_verse: ?u8 = null;
         var to_chapter: ?u8 = null;
+
+        defer self.previous_chapter = from_chapter;
 
         if (mem.indexOfScalar(u8, self.buffer, ':') != null) {
             from_chapter = try self.parseNumber();
@@ -38,8 +41,14 @@ const VerseRangeParser = struct {
                 return ParsingError.UnexpectedToken;
             }
         } else {
-            from_chapter = self.previous_chapter;
-            from_verse = try self.parseNumber();
+            if (self.was_previous_range_all_chapters and
+                mem.indexOfScalar(u8, self.buffer, '-') != null)
+            {
+                from_chapter = try self.parseNumber();
+            } else {
+                from_chapter = self.previous_chapter;
+                from_verse = try self.parseNumber();
+            }
         }
 
         if (self.peekChar() == '-') {
@@ -55,7 +64,11 @@ const VerseRangeParser = struct {
                 }
                 to_verse = try self.parseNumber();
             } else {
-                to_verse = try self.parseNumber();
+                if (self.was_previous_range_all_chapters) {
+                    to_chapter = try self.parseNumber();
+                } else {
+                    to_verse = try self.parseNumber();
+                }
             }
         }
 
@@ -77,18 +90,23 @@ const VerseRangeParser = struct {
         }
 
         if (self.i < self.buffer.len and self.buffer[self.i] == '-') {
-            if (from_verse == null) {
-                return ParsingError.MissingStartingVerseNumber;
-            }
-
             _ = self.eatChar();
 
-            if (mem.indexOfScalar(u8, self.buffer[self.i..], ':') != null) {
+            const has_chapter_and_verse = mem.indexOfScalar(u8, self.buffer[self.i..], ':') != null;
+
+            if (has_chapter_and_verse) {
                 to_chapter = try self.parseNumber();
                 _ = self.eatChar();
-            }
 
-            to_verse = self.parseNumber() catch @panic("Missing ending verse");
+                to_verse = self.parseNumber() catch @panic("Missing ending verse");
+            } else {
+                if (from_verse != null) {
+                    to_verse = self.parseNumber() catch @panic("Missing ending verse");
+                } else {
+                    to_chapter = self.parseNumber() catch @panic("Missing ending chapter");
+                    self.was_previous_range_all_chapters = true;
+                }
+            }
         }
 
         return VerseRange{ .from_chapter = from_chapter, .from_verse = from_verse, .to_chapter = to_chapter, .to_verse = to_verse };
@@ -165,36 +183,6 @@ pub const ArgumentParser = struct {
         }
 
         return BibleReference{ .book = book, .verse_ranges = try verse_ranges.toOwnedSlice() };
-    }
-
-    fn parseVerse(self: *ArgumentParser) !u8 {
-        if (self.i >= self.argument.len) {
-            return ParsingError.OutOfBounds;
-        }
-
-        if (self.argument[self.i] == ':') {
-            _ = self.eatChar();
-        }
-
-        var j = self.i;
-        while (j < self.argument.len and ascii.isDigit(self.peekCharAt(j))) : (j += 1) {}
-        const verse = try fmt.parseInt(u8, self.argument[self.i..j], 10);
-        self.i = j;
-        _ = self.eatWhitespace();
-        return verse;
-    }
-
-    fn parseChapter(self: *ArgumentParser) !u8 {
-        if (self.i >= self.argument.len) {
-            return ParsingError.OutOfBounds;
-        }
-
-        var j = self.i;
-        while (j < self.argument.len and ascii.isDigit(self.peekCharAt(j))) : (j += 1) {}
-        const chapter = try fmt.parseInt(u8, self.argument[self.i..j], 10);
-        self.i = j;
-        _ = self.eatWhitespace();
-        return chapter;
     }
 
     fn parseBook(self: *ArgumentParser) !BibleBook {
@@ -285,13 +273,6 @@ pub const ArgumentParser = struct {
         }
 
         return null;
-    }
-
-    fn peekNextChar(self: ArgumentParser) u8 {
-        if (self.i + 1 < self.argument.len) {
-            return self.argument[self.i + 1];
-        }
-        return 0;
     }
 
     fn peekCharAt(self: ArgumentParser, i: usize) u8 {
@@ -685,6 +666,8 @@ test "parse" {
         "ps 2:1-2, 3, 4, 5-7",
         "ps 3:1-2, 3, 4:1-3, 5-7",
         "1 thess 1:1-2:1, 2:2-3:1",
+        "acts 1-3",
+        "tobit 1-3, 5-6",
     };
 
     const bible_references = [_]BibleReference{
@@ -803,6 +786,28 @@ test "parse" {
                     .from_verse = 2,
                     .to_chapter = 3,
                     .to_verse = 1,
+                },
+            },
+        },
+        BibleReference{
+            .book = .Acts,
+            .verse_ranges = &[_]VerseRange{
+                VerseRange{
+                    .from_chapter = 1,
+                    .to_chapter = 3,
+                },
+            },
+        },
+        BibleReference{
+            .book = .Tobit,
+            .verse_ranges = &[_]VerseRange{
+                VerseRange{
+                    .from_chapter = 1,
+                    .to_chapter = 3,
+                },
+                VerseRange{
+                    .from_chapter = 5,
+                    .to_chapter = 6,
                 },
             },
         },

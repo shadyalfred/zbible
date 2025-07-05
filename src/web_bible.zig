@@ -31,7 +31,7 @@ pub const WEBParser = struct {
         };
     }
 
-    pub fn getBibleVerses(self: *WEBParser, bible_reference: BibleReference) ![]const u8 {
+    pub fn getBiblePassage(self: *WEBParser, bible_reference: BibleReference) ![]const u8 {
         self.has_multiple_chapters = hasMultipleChapters(bible_reference);
 
         defer _ = self.arena_impl.reset(.free_all);
@@ -68,7 +68,6 @@ pub const WEBParser = struct {
             _ = self.arena_impl.reset(.retain_capacity);
             defer lines_it.reset();
 
-            var current_chapter_number = verse_range.from_chapter;
             var should_print_chapter_number = self.has_multiple_chapters;
 
             if (!findChapter(verse_range.from_chapter, &lines_it)) {
@@ -81,37 +80,33 @@ pub const WEBParser = struct {
                 }
             };
 
-            if (verse_range.from_verse) |from_verse| {
-                if (!findVerse(from_verse, &lines_it)) {
-                    return Error.VerseNotFound;
-                }
+            if (!findVerse(verse_range.from_verse orelse 1, &lines_it)) {
+                return Error.VerseNotFound;
+            }
 
-                // N.B. must check previous line after locating the verse,
-                // because sometimes it is perceded by an indentation.
-                // TODO refactor into its own function to parse \q1
-                if (lines_it.peekBackwards()) |previous_line| {
-                    if (mem.startsWith(u8, previous_line, "\\q")) {
-                        if (
-                            try self.parseLine(
-                                previous_line,
-                                &footnotes,
-                                current_chapter_number,
-                                &should_print_chapter_number,
-                            )
-                        ) |parsed_line| {
-                            if (passage.items.len == 0 and parsed_line[0] == '\n') {
-                                try passage.appendSlice(parsed_line[1..]);
-                            } else {
-                                try passage.appendSlice(parsed_line);
-                            }
+            // Must check previous line after locating the verse,
+            // because sometimes it is perceded by an indentation.
+            if (lines_it.peekBackwards()) |previous_line| {
+                if (mem.startsWith(u8, previous_line, "\\q")) {
+                    if (try self.parseLine(
+                        previous_line,
+                        &footnotes,
+                        verse_range.from_chapter,
+                        &should_print_chapter_number,
+                    )) |parsed_line| {
+                        if (passage.items.len == 0 and parsed_line[0] == '\n') {
+                            try passage.appendSlice(parsed_line[1..]);
+                        } else {
+                            try passage.appendSlice(parsed_line);
                         }
                     }
                 }
             }
 
-
-            // single verse
             if (verse_range.from_verse != null and verse_range.to_chapter == null and verse_range.to_verse == null) {
+                // single verse
+                // example: gen 1:1
+
                 const from_verse = verse_range.from_verse.?;
                 while (lines_it.next()) |line| {
                     if (parseChapter(line)) |_| {
@@ -124,19 +119,20 @@ pub const WEBParser = struct {
                         }
                     }
 
-                    if (
-                        try self.parseLine(
-                            line,
-                            &footnotes,
-                            current_chapter_number,
-                            &should_print_chapter_number,
-                        )
-                    ) |parsed_line| {
+                    if (try self.parseLine(
+                        line,
+                        &footnotes,
+                        verse_range.from_chapter,
+                        &should_print_chapter_number,
+                    )) |parsed_line| {
                         try passage.appendSlice(parsed_line);
                         _ = self.arena_impl.reset(.retain_capacity);
                     }
                 }
-            } else if (verse_range.from_verse == null) { // a whole chapter
+            } else if (verse_range.from_verse == null and verse_range.to_chapter == null) {
+                // a whole chapter
+                // example: psa 1
+
                 while (lines_it.next()) |line| {
                     defer _ = self.arena_impl.reset(.retain_capacity);
 
@@ -144,57 +140,12 @@ pub const WEBParser = struct {
                         break;
                     }
 
-                    if (
-                        try self.parseLine(
-                            line,
-                            &footnotes,
-                            current_chapter_number,
-                            &should_print_chapter_number,
-                        )
-                    ) |parsed_line| {
-                        // Has to do this because there is no given first verse to locate
-                        if (passage.items.len == 0) {
-                            if (parsed_line[0] == '\n') {
-                                try passage.appendSlice(parsed_line[1..]);
-                                continue;
-                            }
-                        } else if (passage.getLastOrNull()) |last_char| {
-                            if (last_char != '\n' and !(parsed_line[0] == '\t' or parsed_line[0] == '\n')) {
-                                try passage.append(' ');
-                            }
-                        }
-
-                        try passage.appendSlice(parsed_line);
-                    }
-                }
-            } else if (verse_range.to_chapter) |to_chapter| { // chapter range
-                while (lines_it.next()) |line| {
-                    defer _ = self.arena_impl.reset(.retain_capacity);
-
-                    if (parseChapter(line)) |current_chapter| {
-                        if (current_chapter > to_chapter) {
-                            break;
-                        }
-
-                        current_chapter_number = current_chapter;
-                        should_print_chapter_number = true;
-                        continue;
-                    } else if (parseVerseNumber(line)) |current_verse_number| {
-                        if (current_chapter_number == to_chapter and
-                            current_verse_number > verse_range.to_verse.?)
-                        {
-                            break;
-                        }
-                    }
-
-                    if (
-                        try self.parseLine(
-                            line,
-                            &footnotes,
-                            current_chapter_number,
-                            &should_print_chapter_number,
-                        )
-                    ) |parsed_line| {
+                    if (try self.parseLine(
+                        line,
+                        &footnotes,
+                        verse_range.from_chapter,
+                        &should_print_chapter_number,
+                    )) |parsed_line| {
                         if (passage.getLastOrNull()) |last_char| {
                             if (last_char != '\n' and !(parsed_line[0] == '\t' or parsed_line[0] == '\n')) {
                                 try passage.append(' ');
@@ -204,7 +155,84 @@ pub const WEBParser = struct {
                         try passage.appendSlice(parsed_line);
                     }
                 }
-            } else { // verse range in the same chapter
+            } else if (verse_range.from_verse == null and verse_range.to_chapter != null and verse_range.to_verse == null) {
+                // whole chapters range
+                // example: gen 2-5
+
+                var current_chapter = verse_range.from_chapter;
+
+                while (lines_it.next()) |line| {
+                    defer _ = self.arena_impl.reset(.retain_capacity);
+
+                    if (parseChapter(line)) |current_chapter_number| {
+                        if (current_chapter_number > verse_range.to_chapter.?) {
+                            break;
+                        }
+
+                        current_chapter = current_chapter_number;
+                        should_print_chapter_number = true;
+                    }
+
+                    if (try self.parseLine(
+                        line,
+                        &footnotes,
+                        current_chapter,
+                        &should_print_chapter_number,
+                    )) |parsed_line| {
+                        if (passage.getLastOrNull()) |last_char| {
+                            if (last_char != '\n' and !(parsed_line[0] == '\t' or parsed_line[0] == '\n')) {
+                                try passage.append(' ');
+                            }
+                        }
+
+                        try passage.appendSlice(parsed_line);
+                    }
+                }
+            } else if (verse_range.to_chapter) |to_chapter| {
+                // chapter range
+                // example: gen 1:1-2:1, gen 1-2:1
+
+                var current_chapter = verse_range.from_chapter;
+
+                while (lines_it.next()) |line| {
+                    defer _ = self.arena_impl.reset(.retain_capacity);
+
+                    if (parseChapter(line)) |current_chapter_number| {
+                        if (current_chapter > to_chapter) {
+                            break;
+                        }
+
+                        current_chapter = current_chapter_number;
+
+                        should_print_chapter_number = true;
+                        continue;
+                    } else if (parseVerseNumber(line)) |current_verse_number| {
+                        if (current_chapter == to_chapter and
+                            current_verse_number > verse_range.to_verse.?)
+                        {
+                            break;
+                        }
+                    }
+
+                    if (try self.parseLine(
+                        line,
+                        &footnotes,
+                        current_chapter,
+                        &should_print_chapter_number,
+                    )) |parsed_line| {
+                        if (passage.getLastOrNull()) |last_char| {
+                            if (last_char != '\n' and !(parsed_line[0] == '\t' or parsed_line[0] == '\n')) {
+                                try passage.append(' ');
+                            }
+                        }
+
+                        try passage.appendSlice(parsed_line);
+                    }
+                }
+            } else {
+                // verse range in the same chapter
+                // example: gen 1:1-2
+
                 while (lines_it.next()) |line| {
                     defer _ = self.arena_impl.reset(.retain_capacity);
 
@@ -216,14 +244,12 @@ pub const WEBParser = struct {
                         }
                     }
 
-                    if (
-                        try self.parseLine(
-                            line,
-                            &footnotes,
-                            current_chapter_number,
-                            &should_print_chapter_number,
-                        )
-                    ) |parsed_line| {
+                    if (try self.parseLine(
+                        line,
+                        &footnotes,
+                        verse_range.from_chapter,
+                        &should_print_chapter_number,
+                    )) |parsed_line| {
                         if (passage.getLastOrNull()) |last_char| {
                             if (last_char != '\n' and !(parsed_line[0] == '\t' or parsed_line[0] == '\n')) {
                                 try passage.append(' ');
@@ -243,7 +269,6 @@ pub const WEBParser = struct {
                 break;
             }
         }
-
 
         if (footnotes.items.len != 0) {
             try passage.append('\n');
@@ -323,9 +348,7 @@ pub const WEBParser = struct {
     }
 
     fn parseChapter(line: []const u8) ?u8 {
-        if (
-            ! (mem.startsWith(u8, line, "\\c ") or mem.startsWith(u8, line, "\\cp"))
-        ) {
+        if (!(mem.startsWith(u8, line, "\\c ") or mem.startsWith(u8, line, "\\cp"))) {
             return null;
         }
 
@@ -514,17 +537,21 @@ pub const WEBParser = struct {
                         }
                     },
                     'm' => {
-                        i += line.len;
-                        break;
+                        if (i + 2 < line.len and line[i + 2] != ' ') {
+                            break;
+                        }
+                        try parsed_line.append('\n');
+                        i = mem.indexOfScalarPos(u8, line, i, ' ') orelse line.len;
+                        i += 1;
                     },
-                    'd' => {
+                    'd', 'c' => {
                         break;
                     },
                     else => {
                         if (mem.indexOfScalarPos(u8, line, i, ' ')) |j| {
                             i = j + 1;
                         } else {
-                            i += 3;
+                            break;
                         }
                     },
                 }

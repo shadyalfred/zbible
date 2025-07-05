@@ -30,7 +30,11 @@ pub const BibleReference = struct {
             }
 
             if (verse_range.to_chapter) |to_chapter| {
-                try sb.appendSlice(try fmt.bufPrint(&buffer, "-{d}:{d}", .{ to_chapter, verse_range.to_verse.? }));
+                try sb.appendSlice(try fmt.bufPrint(&buffer, "-{d}", .{to_chapter}));
+
+                if (verse_range.to_verse) |to_verse| {
+                    try sb.appendSlice(try fmt.bufPrint(&buffer, ":{d}", .{to_verse}));
+                }
             } else if (verse_range.to_verse) |to_verse| {
                 try sb.appendSlice(try fmt.bufPrint(&buffer, "-{d}", .{to_verse}));
             }
@@ -318,6 +322,15 @@ test "print bible references" {
                 },
             },
         },
+        BibleReference{
+            .book = .Acts,
+            .verse_ranges = &[_]VerseRange{
+                VerseRange{
+                    .from_chapter = 13,
+                    .to_chapter = 15,
+                },
+            },
+        },
     };
 
     const expected_values = [_][]const u8{
@@ -327,6 +340,7 @@ test "print bible references" {
         "Genesis 1:1-2:1",
         "Second Esdras 1, 2:1, 2:3-5, 3:1-4:1",
         "John 3, 4:2, 5:10-12, 6:1-7:15",
+        "Acts 13-15",
     };
 
     for (bible_references, 0..) |bible_reference, i| {
