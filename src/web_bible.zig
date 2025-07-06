@@ -60,7 +60,7 @@ pub const WEBParser = struct {
 
         const bible_file_name = if (bible_reference.book == .Psalms and bible_reference.verse_ranges[0].from_chapter == 151) "56_PS2eng_web.usfm" else maybe_bible_file_name.?;
 
-        const web_usfm_file_path = try fs.path.join(self.gpa, &[_][]const u8{self.web_dir, bible_file_name});
+        const web_usfm_file_path = try fs.path.join(self.gpa, &[_][]const u8{ self.web_dir, bible_file_name });
         defer self.gpa.free(web_usfm_file_path);
 
         const web_usfm_file = try fs.openFileAbsolute(web_usfm_file_path, .{ .mode = .read_only });
@@ -268,7 +268,8 @@ pub const WEBParser = struct {
                     )) |parsed_line| {
                         if (passage.getLastOrNull()) |last_char| {
                             if (!(last_char == '\n' or last_char == '\t') and
-                                !(parsed_line[0] == '\t' or parsed_line[0] == '\n')) {
+                                !(parsed_line[0] == '\t' or parsed_line[0] == '\n'))
+                            {
                                 try passage.append(' ');
                             }
                         }
@@ -391,8 +392,12 @@ pub const WEBParser = struct {
             return word[0..r];
         }
 
+        if (mem.indexOfScalar(u8, word, '\\')) |r| {
+            return word[0..r];
+        }
+
         var r = word.len - 1;
-        while (!ascii.isAlphabetic(word[r])) {
+        while (r > word.len and (ascii.isWhitespace(word[r]) or !ascii.isAlphabetic(word[r]))) {
             r -= 1;
         }
 
@@ -400,9 +405,7 @@ pub const WEBParser = struct {
             return word;
         }
 
-        r += 1;
-
-        return word[0..r];
+        return word[0..(r + 1)];
     }
 
     fn parseLine(
@@ -498,6 +501,11 @@ pub const WEBParser = struct {
                         const ft_begin = mem.indexOfScalarPos(u8, line, fr_end + 1, ' ').? + 1;
                         const ft_end = mem.indexOfPosLinear(u8, line, ft_begin, "\\f*").?;
                         const ft_raw = line[ft_begin..ft_end];
+
+                        if (line[ft_end + 3] != ' ' and maybe_word == null) {
+                            const word_begin = ft_end + 3;
+                            maybe_word = cleanUpWord(line[word_begin..mem.indexOfScalarPos(u8, line, word_begin, ' ').?]);
+                        }
 
                         var temp = try mem.replaceOwned(u8, self.arena, ft_raw, "\\+wh ", "");
                         temp = try mem.replaceOwned(u8, self.arena, temp, "\\+wh*", "");
