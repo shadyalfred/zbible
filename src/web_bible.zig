@@ -267,7 +267,8 @@ pub const WEBParser = struct {
                         &should_print_chapter_number,
                     )) |parsed_line| {
                         if (passage.getLastOrNull()) |last_char| {
-                            if (last_char != '\n' and !(parsed_line[0] == '\t' or parsed_line[0] == '\n')) {
+                            if (!(last_char == '\n' or last_char == '\t') and
+                                !(parsed_line[0] == '\t' or parsed_line[0] == '\n')) {
                                 try passage.append(' ');
                             }
                         }
