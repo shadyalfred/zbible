@@ -32,6 +32,7 @@ pub fn main() !void {
     defer bible_reference.deinit(gpa);
 
     var web_bible = WEBParser.init(gpa, &arena_impl);
+    defer web_bible.deinit();
 
     const passage = try web_bible.getBiblePassage(bible_reference);
     defer gpa.free(passage);

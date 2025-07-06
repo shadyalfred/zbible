@@ -1,11 +1,10 @@
 const std = @import("std");
 const heap = std.heap;
 const fmt = std.fmt;
-const io = std.io;
-const hash = std.hash;
 const mem = std.mem;
 const ascii = std.ascii;
 const fs = std.fs;
+const process = std.process;
 
 const BibleBook = @import("bible_reference.zig").BibleBook;
 const BibleReference = @import("bible_reference.zig").BibleReference;
@@ -21,14 +20,25 @@ pub const WEBParser = struct {
     gpa: mem.Allocator,
     arena_impl: *heap.ArenaAllocator,
     arena: mem.Allocator,
+    web_dir: []const u8,
     has_multiple_chapters: bool = false,
 
     pub fn init(gpa: mem.Allocator, arena_impl: *heap.ArenaAllocator) WEBParser {
+        const web_dir = process.getEnvVarOwned(gpa, "ZBIBLE_WEB_DIR") catch blk: {
+            break :blk gpa.dupe(u8, "/usr/share/zbible/eng-web-usfm") catch unreachable;
+        };
+
         return WEBParser{
             .gpa = gpa,
             .arena_impl = arena_impl,
             .arena = arena_impl.allocator(),
+            .web_dir = web_dir,
         };
+    }
+
+    pub fn deinit(self: WEBParser) void {
+        self.gpa.free(self.web_dir);
+        _ = self.arena_impl.reset(.free_all);
     }
 
     pub fn getBiblePassage(self: *WEBParser, bible_reference: BibleReference) ![]const u8 {
@@ -50,13 +60,13 @@ pub const WEBParser = struct {
 
         const bible_file_name = if (bible_reference.book == .Psalms and bible_reference.verse_ranges[0].from_chapter == 151) "56_PS2eng_web.usfm" else maybe_bible_file_name.?;
 
-        const web_usfm_file = try fs.openFileAbsolute(
-            try fmt.allocPrint(self.arena, "/usr/share/zbible/eng-web-usfm/{s}", .{bible_file_name}),
-            .{ .mode = .read_only },
-        );
+        const web_usfm_file_path = try fs.path.join(self.gpa, &[_][]const u8{self.web_dir, bible_file_name});
+        defer self.gpa.free(web_usfm_file_path);
+
+        const web_usfm_file = try fs.openFileAbsolute(web_usfm_file_path, .{ .mode = .read_only });
         defer web_usfm_file.close();
 
-        var buffered_reader = io.bufferedReader(web_usfm_file.reader());
+        var buffered_reader = std.io.bufferedReader(web_usfm_file.reader());
         var file_reader = buffered_reader.reader();
 
         const file = try file_reader.readAllAlloc(self.gpa, 1024 * 1024);

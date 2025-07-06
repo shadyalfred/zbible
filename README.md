@@ -22,14 +22,15 @@ https://github.com/user-attachments/assets/26ef8b20-77d7-45d8-939d-e09baa90c95e
 zig build -Doptimize=ReleaseFast
 ```
 ```sh
+sudo cp ./zig-out/bin/zbible /usr/bin/
+```
+```sh
 sudo mkdir /usr/share/zbible
 ```
 ```sh
 sudo cp -r ./eng-web-usfm /usr/share/zbible/
 ```
-```sh
-sudo cp ./zig-out/bin/zbible /usr/bin/
-```
+Or you can use another location and set the `ZBIBLE_WEB_DIR` environment variable to point to it.
 
 # List of available books
 ## Old Testament
