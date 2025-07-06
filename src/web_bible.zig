@@ -107,7 +107,13 @@ pub const WEBParser = struct {
                         if (passage.items.len == 0 and parsed_line[0] == '\n') {
                             try passage.appendSlice(parsed_line[1..]);
                         } else {
-                            try passage.appendSlice(parsed_line);
+                            if (passage.getLastOrNull()) |last_char| {
+                                if (last_char == '\n' and parsed_line[0] == last_char) {
+                                    try passage.appendSlice(parsed_line[1..]);
+                                } else {
+                                    try passage.appendSlice(parsed_line[1..]);
+                                }
+                            }
                         }
                     }
                 }
