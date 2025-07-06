@@ -15,7 +15,7 @@ Uses the [World English Bible](https://worldenglish.bible/). Thanks to [eBible.o
 
 ### N.B. `Psalm 151` is considered a different book from Psalms, do not mix them together.
 
-https://github.com/user-attachments/assets/26ef8b20-77d7-45d8-939d-e09baa90c95e
+https://github.com/user-attachments/assets/38059c2c-4b15-479b-9760-2621cc01f63a
 
 # Installation
 ```sh
