@@ -1,0 +1,75 @@
+name: Build and Release Zig Project
+
+on:
+  push:
+    tags:
+      - "v*" # Trigger on version tags like v1.0.0
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target:
+          - x86_64-linux-gnu
+          - x86_64-windows-gnu
+          - x86_64-macos-gnu
+    steps:
+      # Checkout the repository
+      - uses: actions/checkout@v4
+
+      # Set up Zig compiler
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.14.1 # Specify desired Zig version or use 'latest'
+
+      # Build the Zig project for the specified target
+      - name: Build for ${{ matrix.target }}
+        run: |
+          zig build -Doptimize=ReleaseFast -Dtarget=${{ matrix.target }}
+          mkdir -p release/${{ matrix.target }}
+          mv zig-out/bin/* release/${{ matrix.target }}/
+
+      # Package the binary
+      - name: Package binary
+        run: |
+          cd release/${{ matrix.target }}
+          tar -czf zbible_${{ github.ref_name }}_${{ matrix.target }}.tar.gz *
+          mv zbible_${{ github.ref_name }}_${{ matrix.target }}.tar.gz ../../
+        shell: bash
+
+      # Upload artifact
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: zbible-${{ matrix.target }}
+          path: zbible_${{ github.ref_name }}_${{ matrix.target }}.tar.gz
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      # Checkout the repository (optional, for context)
+      - uses: actions/checkout@v4
+
+      # Download all artifacts
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      # Create GitHub release with all artifacts
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/zbible-x86_64-linux-gnu/zbible_${{ github.ref_name }}_x86_64-linux-gnu.tar.gz
+            artifacts/zbible-x86_64-windows-gnu/zbible_${{ github.ref_name }}_x86_64-windows-gnu.tar.gz
+            artifacts/zbible-x86_64-macos-gnu/zbible_${{ github.ref_name }}_x86_64-macos-gnu.tar.gz
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
