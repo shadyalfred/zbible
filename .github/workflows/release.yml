@@ -6,17 +6,20 @@ on:
       - "v*" # Trigger on version tags like v1.0.0
 
 permissions:
-  contents: write
+  contents: write # Required for creating releases
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        target:
-          - x86_64-linux-gnu
-          - x86_64-windows-gnu
-          - x86_64-macos-gnu
+        include:
+          - target: x86_64-linux-gnu
+            os: ubuntu-latest
+          - target: x86_64-windows-gnu
+            os: ubuntu-latest
+          - target: x86_64-macos
+            os: macos-latest
     steps:
       # Checkout the repository
       - uses: actions/checkout@v4
@@ -49,7 +52,7 @@ jobs:
           path: zbible_${{ github.ref_name }}_${{ matrix.target }}.tar.gz
 
   release:
-    needs: build
+    needs: build # Depends on the build job completing for all matrix targets
     runs-on: ubuntu-latest
     steps:
       # Checkout the repository (optional, for context)
@@ -68,7 +71,7 @@ jobs:
           files: |
             artifacts/zbible-x86_64-linux-gnu/zbible_${{ github.ref_name }}_x86_64-linux-gnu.tar.gz
             artifacts/zbible-x86_64-windows-gnu/zbible_${{ github.ref_name }}_x86_64-windows-gnu.tar.gz
-            artifacts/zbible-x86_64-macos-gnu/zbible_${{ github.ref_name }}_x86_64-macos-gnu.tar.gz
+            artifacts/zbible-x86_64-macos/zbible_${{ github.ref_name }}_x86_64-macos.tar.gz
           draft: false
           prerelease: false
         env:
