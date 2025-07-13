@@ -2,6 +2,8 @@ Uses the [World English Bible](https://worldenglish.bible/). Thanks to [eBible.o
 
 # Usage
 
+https://github.com/user-attachments/assets/5db90161-d014-442a-af06-5e68c5ebf082
+
 ## Whole chapter
 `zbible book_name chapter`
 ## Consecutive verses from the same chapter
@@ -14,8 +16,6 @@ Uses the [World English Bible](https://worldenglish.bible/). Thanks to [eBible.o
 `zbible book_name from_chapter:verse-to_chapter:verse`
 
 ### N.B. `Psalm 151` is considered a different book from Psalms, do not mix them together.
-
-https://github.com/user-attachments/assets/26ef8b20-77d7-45d8-939d-e09baa90c95e
 
 # Installation
 ```sh
