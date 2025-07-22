@@ -454,6 +454,17 @@ pub const WEBParser = struct {
                         i = mem.indexOfScalarPos(u8, line, i, '*').? + 1;
                     },
                     'q' => {
+                        if (line[i + 2] == 's') {
+                            if (line[i + 3] == '*') {
+                                i += 5;
+                            } else {
+                                i += 4;
+                            }
+
+                            try parsed_line.append('\n');
+
+                            continue;
+                        }
                         var indentation_level = line[i + 2] - '0';
                         try parsed_line.append('\n');
                         while (indentation_level > 1) : (indentation_level -= 1) {
