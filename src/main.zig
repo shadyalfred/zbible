@@ -19,6 +19,7 @@ pub fn main() !void {
 
     var args_it = try process.argsWithAllocator(gpa);
     defer args_it.deinit();
+
     const argument = try collectArgsIntoSlice(gpa, &args_it);
     defer gpa.free(argument);
 

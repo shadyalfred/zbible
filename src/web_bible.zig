@@ -4,7 +4,6 @@ const fmt = std.fmt;
 const mem = std.mem;
 const ascii = std.ascii;
 const fs = std.fs;
-const process = std.process;
 
 const BibleBook = @import("bible_reference.zig").BibleBook;
 const BibleReference = @import("bible_reference.zig").BibleReference;
@@ -20,24 +19,17 @@ pub const WEBParser = struct {
     gpa: mem.Allocator,
     arena_impl: *heap.ArenaAllocator,
     arena: mem.Allocator,
-    web_dir: []const u8,
     has_multiple_chapters: bool = false,
 
     pub fn init(gpa: mem.Allocator, arena_impl: *heap.ArenaAllocator) WEBParser {
-        const web_dir = process.getEnvVarOwned(gpa, "ZBIBLE_WEB_DIR") catch blk: {
-            break :blk gpa.dupe(u8, "/usr/share/zbible/eng-web-usfm") catch unreachable;
-        };
-
         return WEBParser{
             .gpa = gpa,
             .arena_impl = arena_impl,
             .arena = arena_impl.allocator(),
-            .web_dir = web_dir,
         };
     }
 
     pub fn deinit(self: WEBParser) void {
-        self.gpa.free(self.web_dir);
         _ = self.arena_impl.reset(.free_all);
     }
 
@@ -46,33 +38,19 @@ pub const WEBParser = struct {
 
         defer _ = self.arena_impl.reset(.free_all);
 
-        const maybe_bible_file_name = getBibleBookFileName(bible_reference.book);
-
-        if (maybe_bible_file_name == null) {
-            return Error.BibleBookNotFound;
-        }
-
         var passage = try std.ArrayList(u8).initCapacity(self.gpa, 4 * 1024);
         defer passage.deinit();
 
         var footnotes = try std.ArrayList(u8).initCapacity(self.gpa, 2 * 1024);
         defer footnotes.deinit();
 
-        const bible_file_name = if (bible_reference.book == .Psalms and bible_reference.verse_ranges[0].from_chapter == 151) "56_PS2eng_web.usfm" else maybe_bible_file_name.?;
+        const bible_book =
+            if (bible_reference.book == .Psalms and bible_reference.verse_ranges[0].from_chapter == 151)
+                @embedFile("./eng-web-usfm/56_PS2eng_web.usfm")
+            else
+                getBibleBook(bible_reference.book);
 
-        const web_usfm_file_path = try fs.path.join(self.gpa, &[_][]const u8{ self.web_dir, bible_file_name });
-        defer self.gpa.free(web_usfm_file_path);
-
-        const web_usfm_file = try fs.openFileAbsolute(web_usfm_file_path, .{ .mode = .read_only });
-        defer web_usfm_file.close();
-
-        var buffered_reader = std.io.bufferedReader(web_usfm_file.reader());
-        var file_reader = buffered_reader.reader();
-
-        const file = try file_reader.readAllAlloc(self.gpa, 1024 * 1024);
-        defer self.gpa.free(file);
-
-        var lines_it = TokenIterator{ .buffer = file, .delimiter = '\n' };
+        var lines_it = TokenIterator{ .buffer = bible_book, .delimiter = '\n' };
 
         for (bible_reference.verse_ranges) |verse_range| {
             _ = self.arena_impl.reset(.retain_capacity);
@@ -626,93 +604,93 @@ pub const WEBParser = struct {
     }
 };
 
-fn getBibleBookFileName(bible_book: BibleBook) ?[]const u8 {
+fn getBibleBook(bible_book: BibleBook) []const u8 {
     return switch (bible_book) {
-        .Genesis => "02_GENeng_web.usfm",
-        .Exodus => "03_EXOeng_web.usfm",
-        .Leviticus => "04_LEVeng_web.usfm",
-        .Numbers => "05_NUMeng_web.usfm",
-        .Deuteronomy => "06_DEUeng_web.usfm",
-        .Joshua => "07_JOSeng_web.usfm",
-        .Judges => "08_JDGeng_web.usfm",
-        .Ruth => "09_RUTeng_web.usfm",
-        .FirstSamuel => "10_1SAeng_web.usfm",
-        .SecondSamuel => "11_2SAeng_web.usfm",
-        .FirstKings => "12_1KIeng_web.usfm",
-        .SecondKings => "13_2KIeng_web.usfm",
-        .FirstChronicles => "14_1CHeng_web.usfm",
-        .SecondChronicles => "15_2CHeng_web.usfm",
-        .Ezra => "16_EZReng_web.usfm",
-        .Nehemiah => "17_NEHeng_web.usfm",
-        .Esther => "18_ESTeng_web.usfm",
-        .Job => "19_JOBeng_web.usfm",
-        .Psalms => "20_PSAeng_web.usfm",
-        .Proverbs => "21_PROeng_web.usfm",
-        .Ecclesiastes => "22_ECCeng_web.usfm",
-        .SongOfSolomon => "23_SNGeng_web.usfm",
-        .Isaiah => "24_ISAeng_web.usfm",
-        .Jeremiah => "25_JEReng_web.usfm",
-        .Lamentations => "26_LAMeng_web.usfm",
-        .Ezekiel => "27_EZKeng_web.usfm",
-        .Daniel => "28_DANeng_web.usfm",
-        .Hosea => "29_HOSeng_web.usfm",
-        .Joel => "30_JOLeng_web.usfm",
-        .Amos => "31_AMOeng_web.usfm",
-        .Obadiah => "32_OBAeng_web.usfm",
-        .Jonah => "33_JONeng_web.usfm",
-        .Micah => "34_MICeng_web.usfm",
-        .Nahum => "35_NAMeng_web.usfm",
-        .Habakkuk => "36_HABeng_web.usfm",
-        .Zephaniah => "37_ZEPeng_web.usfm",
-        .Haggai => "38_HAGeng_web.usfm",
-        .Zechariah => "39_ZECeng_web.usfm",
-        .Malachi => "40_MALeng_web.usfm",
+        .Genesis => @embedFile("./eng-web-usfm/02_GENeng_web.usfm"),
+        .Exodus => @embedFile("./eng-web-usfm/03_EXOeng_web.usfm"),
+        .Leviticus => @embedFile("./eng-web-usfm/04_LEVeng_web.usfm"),
+        .Numbers => @embedFile("./eng-web-usfm/05_NUMeng_web.usfm"),
+        .Deuteronomy => @embedFile("./eng-web-usfm/06_DEUeng_web.usfm"),
+        .Joshua => @embedFile("./eng-web-usfm/07_JOSeng_web.usfm"),
+        .Judges => @embedFile("./eng-web-usfm/08_JDGeng_web.usfm"),
+        .Ruth => @embedFile("./eng-web-usfm/09_RUTeng_web.usfm"),
+        .FirstSamuel => @embedFile("./eng-web-usfm/10_1SAeng_web.usfm"),
+        .SecondSamuel => @embedFile("./eng-web-usfm/11_2SAeng_web.usfm"),
+        .FirstKings => @embedFile("./eng-web-usfm/12_1KIeng_web.usfm"),
+        .SecondKings => @embedFile("./eng-web-usfm/13_2KIeng_web.usfm"),
+        .FirstChronicles => @embedFile("./eng-web-usfm/14_1CHeng_web.usfm"),
+        .SecondChronicles => @embedFile("./eng-web-usfm/15_2CHeng_web.usfm"),
+        .Ezra => @embedFile("./eng-web-usfm/16_EZReng_web.usfm"),
+        .Nehemiah => @embedFile("./eng-web-usfm/17_NEHeng_web.usfm"),
+        .Esther => @embedFile("./eng-web-usfm/18_ESTeng_web.usfm"),
+        .Job => @embedFile("./eng-web-usfm/19_JOBeng_web.usfm"),
+        .Psalms => @embedFile("./eng-web-usfm/20_PSAeng_web.usfm"),
+        .Proverbs => @embedFile("./eng-web-usfm/21_PROeng_web.usfm"),
+        .Ecclesiastes => @embedFile("./eng-web-usfm/22_ECCeng_web.usfm"),
+        .SongOfSolomon => @embedFile("./eng-web-usfm/23_SNGeng_web.usfm"),
+        .Isaiah => @embedFile("./eng-web-usfm/24_ISAeng_web.usfm"),
+        .Jeremiah => @embedFile("./eng-web-usfm/25_JEReng_web.usfm"),
+        .Lamentations => @embedFile("./eng-web-usfm/26_LAMeng_web.usfm"),
+        .Ezekiel => @embedFile("./eng-web-usfm/27_EZKeng_web.usfm"),
+        .Daniel => @embedFile("./eng-web-usfm/28_DANeng_web.usfm"),
+        .Hosea => @embedFile("./eng-web-usfm/29_HOSeng_web.usfm"),
+        .Joel => @embedFile("./eng-web-usfm/30_JOLeng_web.usfm"),
+        .Amos => @embedFile("./eng-web-usfm/31_AMOeng_web.usfm"),
+        .Obadiah => @embedFile("./eng-web-usfm/32_OBAeng_web.usfm"),
+        .Jonah => @embedFile("./eng-web-usfm/33_JONeng_web.usfm"),
+        .Micah => @embedFile("./eng-web-usfm/34_MICeng_web.usfm"),
+        .Nahum => @embedFile("./eng-web-usfm/35_NAMeng_web.usfm"),
+        .Habakkuk => @embedFile("./eng-web-usfm/36_HABeng_web.usfm"),
+        .Zephaniah => @embedFile("./eng-web-usfm/37_ZEPeng_web.usfm"),
+        .Haggai => @embedFile("./eng-web-usfm/38_HAGeng_web.usfm"),
+        .Zechariah => @embedFile("./eng-web-usfm/39_ZECeng_web.usfm"),
+        .Malachi => @embedFile("./eng-web-usfm/40_MALeng_web.usfm"),
 
-        .Tobit => "41_TOBeng_web.usfm",
-        .Judith => "42_JDTeng_web.usfm",
-        .GreekEsther => "43_ESGeng_web.usfm",
-        .Wisdom => "45_WISeng_web.usfm",
-        .Sirach => "46_SIReng_web.usfm",
-        .Baruch => "47_BAReng_web.usfm",
-        .FirstMaccabees => "52_1MAeng_web.usfm",
-        .SecondMaccabees => "53_2MAeng_web.usfm",
-        .FirstEsdras => "54_1ESeng_web.usfm",
-        .PrayerOfManasseh => "55_MANeng_web.usfm",
-        .ThirdMaccabees => "57_3MAeng_web.usfm",
-        .SecondEsdras => "58_2ESeng_web.usfm",
-        .FourthMaccabees => "59_4MAeng_web.usfm",
-        .GreekDaniel => "66_DAGeng_web.usfm",
+        .Tobit => @embedFile("./eng-web-usfm/41_TOBeng_web.usfm"),
+        .Judith => @embedFile("./eng-web-usfm/42_JDTeng_web.usfm"),
+        .GreekEsther => @embedFile("./eng-web-usfm/43_ESGeng_web.usfm"),
+        .Wisdom => @embedFile("./eng-web-usfm/45_WISeng_web.usfm"),
+        .Sirach => @embedFile("./eng-web-usfm/46_SIReng_web.usfm"),
+        .Baruch => @embedFile("./eng-web-usfm/47_BAReng_web.usfm"),
+        .FirstMaccabees => @embedFile("./eng-web-usfm/52_1MAeng_web.usfm"),
+        .SecondMaccabees => @embedFile("./eng-web-usfm/53_2MAeng_web.usfm"),
+        .FirstEsdras => @embedFile("./eng-web-usfm/54_1ESeng_web.usfm"),
+        .PrayerOfManasseh => @embedFile("./eng-web-usfm/55_MANeng_web.usfm"),
+        .ThirdMaccabees => @embedFile("./eng-web-usfm/57_3MAeng_web.usfm"),
+        .SecondEsdras => @embedFile("./eng-web-usfm/58_2ESeng_web.usfm"),
+        .FourthMaccabees => @embedFile("./eng-web-usfm/59_4MAeng_web.usfm"),
+        .GreekDaniel => @embedFile("./eng-web-usfm/66_DAGeng_web.usfm"),
 
         .PrayerOfAzariah => @panic("look up Greek Daniel"),
         .Susanna => @panic("look up Greek Daniel"),
         .BelAndTheDragon => @panic("look up Greek Daniel"),
 
-        .Matthew => "70_MATeng_web.usfm",
-        .Mark => "71_MRKeng_web.usfm",
-        .Luke => "72_LUKeng_web.usfm",
-        .John => "73_JHNeng_web.usfm",
-        .Acts => "74_ACTeng_web.usfm",
-        .Romans => "75_ROMeng_web.usfm",
-        .FirstCorinthians => "76_1COeng_web.usfm",
-        .SecondCorinthians => "77_2COeng_web.usfm",
-        .Galatians => "78_GALeng_web.usfm",
-        .Ephesians => "79_EPHeng_web.usfm",
-        .Philippians => "80_PHPeng_web.usfm",
-        .Colossians => "81_COLeng_web.usfm",
-        .FirstThessalonians => "82_1THeng_web.usfm",
-        .SecondThessalonians => "83_2THeng_web.usfm",
-        .FirstTimothy => "84_1TIeng_web.usfm",
-        .SecondTimothy => "85_2TIeng_web.usfm",
-        .Titus => "86_TITeng_web.usfm",
-        .Philemon => "87_PHMeng_web.usfm",
-        .Hebrews => "88_HEBeng_web.usfm",
-        .James => "89_JASeng_web.usfm",
-        .FirstPeter => "90_1PEeng_web.usfm",
-        .SecondPeter => "91_2PEeng_web.usfm",
-        .FirstJohn => "92_1JNeng_web.usfm",
-        .SecondJohn => "93_2JNeng_web.usfm",
-        .ThirdJohn => "94_3JNeng_web.usfm",
-        .Jude => "95_JUDeng_web.usfm",
-        .Revelation => "96_REVeng_web.usfm",
+        .Matthew => @embedFile("./eng-web-usfm/70_MATeng_web.usfm"),
+        .Mark => @embedFile("./eng-web-usfm/71_MRKeng_web.usfm"),
+        .Luke => @embedFile("./eng-web-usfm/72_LUKeng_web.usfm"),
+        .John => @embedFile("./eng-web-usfm/73_JHNeng_web.usfm"),
+        .Acts => @embedFile("./eng-web-usfm/74_ACTeng_web.usfm"),
+        .Romans => @embedFile("./eng-web-usfm/75_ROMeng_web.usfm"),
+        .FirstCorinthians => @embedFile("./eng-web-usfm/76_1COeng_web.usfm"),
+        .SecondCorinthians => @embedFile("./eng-web-usfm/77_2COeng_web.usfm"),
+        .Galatians => @embedFile("./eng-web-usfm/78_GALeng_web.usfm"),
+        .Ephesians => @embedFile("./eng-web-usfm/79_EPHeng_web.usfm"),
+        .Philippians => @embedFile("./eng-web-usfm/80_PHPeng_web.usfm"),
+        .Colossians => @embedFile("./eng-web-usfm/81_COLeng_web.usfm"),
+        .FirstThessalonians => @embedFile("./eng-web-usfm/82_1THeng_web.usfm"),
+        .SecondThessalonians => @embedFile("./eng-web-usfm/83_2THeng_web.usfm"),
+        .FirstTimothy => @embedFile("./eng-web-usfm/84_1TIeng_web.usfm"),
+        .SecondTimothy => @embedFile("./eng-web-usfm/85_2TIeng_web.usfm"),
+        .Titus => @embedFile("./eng-web-usfm/86_TITeng_web.usfm"),
+        .Philemon => @embedFile("./eng-web-usfm/87_PHMeng_web.usfm"),
+        .Hebrews => @embedFile("./eng-web-usfm/88_HEBeng_web.usfm"),
+        .James => @embedFile("./eng-web-usfm/89_JASeng_web.usfm"),
+        .FirstPeter => @embedFile("./eng-web-usfm/90_1PEeng_web.usfm"),
+        .SecondPeter => @embedFile("./eng-web-usfm/91_2PEeng_web.usfm"),
+        .FirstJohn => @embedFile("./eng-web-usfm/92_1JNeng_web.usfm"),
+        .SecondJohn => @embedFile("./eng-web-usfm/93_2JNeng_web.usfm"),
+        .ThirdJohn => @embedFile("./eng-web-usfm/94_3JNeng_web.usfm"),
+        .Jude => @embedFile("./eng-web-usfm/95_JUDeng_web.usfm"),
+        .Revelation => @embedFile("./eng-web-usfm/96_REVeng_web.usfm"),
     };
 }

@@ -1,7 +1,7 @@
-Uses the [World English Bible](https://worldenglish.bible/). Thanks to [eBible.org](https://ebible.org/) for providing the WEB in USFM format.
+Uses the [World English Bible](https://worldenglish.bible/).
+Thanks to [eBible.org](https://ebible.org/) for providing the WEB in USFM format for free.
 
 # Usage
-
 https://github.com/user-attachments/assets/5db90161-d014-442a-af06-5e68c5ebf082
 
 ## Whole chapter
@@ -17,20 +17,21 @@ https://github.com/user-attachments/assets/5db90161-d014-442a-af06-5e68c5ebf082
 
 ### N.B. `Psalm 151` is considered a different book from Psalms, do not mix them together.
 
+### If you are on Linux you can use the `fold` cli tool to break up the text if it’s too long.
+```sh
+zbible gen 1 | fold -s
+```
+
+You can also provide the desired number of columns for the width `-w`, see `man fold` for more details.
+
 # Installation
 ```sh
 zig build -Doptimize=ReleaseFast
 ```
+
 ```sh
 sudo cp ./zig-out/bin/zbible /usr/bin/
 ```
-```sh
-sudo mkdir /usr/share/zbible
-```
-```sh
-sudo cp -r ./eng-web-usfm /usr/share/zbible/
-```
-Or you can use another location and set the `ZBIBLE_WEB_DIR` environment variable to point to it.
 
 # List of available books
 ## Old Testament

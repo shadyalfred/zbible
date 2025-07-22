@@ -31,6 +31,7 @@ pub fn build(b: *std.Build) void {
     const exe = b.addExecutable(.{
         .name = "zbible",
         .root_module = exe_mod,
+        .strip = optimize == .ReleaseFast or optimize == .ReleaseSmall,
     });
 
     // This declares intent for the executable to be installed into the
