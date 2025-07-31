@@ -375,12 +375,11 @@ pub const WEBParser = struct {
         }
 
         var r = word.len - 1;
-        while (r > word.len and (ascii.isWhitespace(word[r]) or !ascii.isAlphabetic(word[r]))) {
+        while (
+            r > 0 and
+            (ascii.isWhitespace(word[r]) or !ascii.isAlphabetic(word[r]))
+        ) {
             r -= 1;
-        }
-
-        if (r == word.len - 1) {
-            return word;
         }
 
         return word[0..(r + 1)];
@@ -479,10 +478,6 @@ pub const WEBParser = struct {
                     'f' => {
                         var maybe_word: ?[]const u8 = null;
 
-                        if (line[i - 1] != ' ') {
-                            maybe_word = cleanUpWord(line[(mem.lastIndexOfScalar(u8, line[0..i], ' ').? + 1)..i]);
-                        }
-
                         const fr_begin = mem.indexOfScalarPos(u8, line, i, ':').? + 1;
                         const fr_end = mem.indexOfScalarPos(u8, line, fr_begin, ' ').?;
                         const verse_number = line[fr_begin..fr_end];
@@ -491,18 +486,27 @@ pub const WEBParser = struct {
                         const ft_end = mem.indexOfPosLinear(u8, line, ft_begin, "\\f*").?;
                         const ft_raw = line[ft_begin..ft_end];
 
-                        if (line[ft_end + 3] != ' ' and maybe_word == null) {
-                            const word_begin = ft_end + 3;
-                            maybe_word = cleanUpWord(line[word_begin..mem.indexOfScalarPos(u8, line, word_begin, ' ').?]);
+                        if (ascii.isAlphabetic(line[ft_end + 3]) or i <= 6) {
+                            var word_begin = ft_end + 3;
+                            if (line[word_begin] == ' ') {
+                                word_begin += 1;
+                            }
+                            var word_end = mem.indexOfScalarPos(u8, line, word_begin, ' ').?;
+
+                            if (word_end - word_begin <= 3) {
+                                const temp = mem.indexOfScalarPos(u8, line, word_end + 1, ' ');
+                                if (temp != null) {
+                                    word_end = temp.?;
+                                }
+                            }
+
+                            maybe_word = cleanUpWord(line[word_begin..word_end]);
+                            if (maybe_word.?.len <= 1) {
+                                maybe_word = null;
+                            }
                         }
 
-                        var temp = try mem.replaceOwned(u8, self.arena, ft_raw, "\\+wh ", "");
-                        temp = try mem.replaceOwned(u8, self.arena, temp, "\\+wh*", "");
-                        temp = try mem.replaceOwned(u8, self.arena, temp, "\\+bk ", "“");
-                        temp = try mem.replaceOwned(u8, self.arena, temp, "\\+bk*", "”");
-                        temp = try mem.replaceOwned(u8, self.arena, temp, "\\fqa ", "");
-                        temp = try mem.replaceOwned(u8, self.arena, temp, "\\fl ", "");
-                        temp = try mem.replaceOwned(u8, self.arena, temp, "\\ft ", "");
+                        const ft = self.parseFootnote(ft_raw);
 
                         try footnotes.append('\n');
                         if (self.has_multiple_chapters) {
@@ -514,8 +518,10 @@ pub const WEBParser = struct {
                         try footnotes.appendSlice(": ");
                         if (maybe_word) |word| {
                             try footnotes.appendSlice(try fmt.allocPrint(self.arena, "({s}) ", .{word}));
+                        } else {
+                            try footnotes.appendSlice(try fmt.allocPrint(self.arena, "({s}) ", .{getLastWord(parsed_line)}));
                         }
-                        try footnotes.appendSlice(mem.trimRight(u8, temp[0..], " "));
+                        try footnotes.appendSlice(ft);
 
                         i = ft_end + 3;
                     },
@@ -558,7 +564,7 @@ pub const WEBParser = struct {
                         i = mem.indexOfScalarPos(u8, line, i, ' ') orelse line.len;
                         i += 1;
                     },
-                    'd', 'c' => {
+                    'd', 'c', 's' => {
                         break;
                     },
                     else => {
@@ -601,6 +607,78 @@ pub const WEBParser = struct {
         }
 
         return try parsed_line.toOwnedSlice();
+    }
+
+    fn getLastWord(parsed_line: std.ArrayList(u8)) []const u8 {
+        var r = parsed_line.items.len - 1;
+        while (r > 0 and parsed_line.items[r] == ' ') {
+            r -= 1;
+        }
+
+        var l = r;
+        while (l > 0 and parsed_line.items[l] != ' ') {
+            l -= 1;
+        }
+
+        if (r - l <= 3) {
+            l -= 1;
+
+            while (l > 0 and parsed_line.items[l] != ' ') {
+                l -= 1;
+            }
+        }
+
+        l += 1;
+        while (l < r and !ascii.isAlphabetic(parsed_line.items[l])) {
+            l += 1;
+        }
+
+        while (r > l and !ascii.isAlphabetic(parsed_line.items[r])) {
+            r -= 1;
+        }
+        r += 1;
+
+        return parsed_line.items[l..r];
+    }
+
+    fn parseFootnote(self: WEBParser, ft_raw: []const u8) []const u8 {
+        var ft = std.ArrayList(u8).initCapacity(self.arena, 4 * 1024) catch unreachable;
+        defer ft.deinit();
+
+        var i: usize = 0;
+        while (i < ft_raw.len) {
+            if (ft_raw[i] == '\\') {
+                if (ft_raw[i + 1] == '+') {
+                    if (ft_raw[i + 2] == 'b' and ft_raw[i + 3] == 'k') {
+                        if (ft_raw[i + 4] == '*') {
+                            ft.appendSlice("”") catch unreachable;
+                        } else {
+                            ft.appendSlice("“") catch unreachable;
+                        }
+                    }
+                    i += 5;
+                } else {
+                    if (ft_raw[i + 1] == 'f') {
+                        if (ft_raw[i + 2] == 'q') {
+                            i += 5;
+                        } else {
+                            i += 4;
+                        }
+                    }
+                }
+            } else {
+                ft.append(ft_raw[i]) catch unreachable;
+                i += 1;
+            }
+        }
+
+        if (ft.getLastOrNull()) |last_char| {
+            if (last_char == ' ') {
+                _ = ft.pop();
+            }
+        }
+
+        return ft.toOwnedSlice() catch unreachable;
     }
 };
 
